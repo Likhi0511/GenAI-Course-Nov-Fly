@@ -1,7 +1,7 @@
 import requests
 
 API_URL = "https://gtr8jzbojrt4pzac.us-east-1.aws.endpoints.huggingface.cloud"   # your endpoint URL
-HF_TOKEN = "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"
+HF_TOKEN = "<>"
 
 headers = {
     "Authorization": f"Bearer {HF_TOKEN}",
