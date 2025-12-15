@@ -1,200 +1,195 @@
 """
-NL2SQL LangChain Agent with Pinecone Vector Store
-Builds an agent that converts natural language to SQL using semantic memory
+NL2SQL Agent Builder
+Follows the pattern from your example - imports config, builds agent async
 """
 
 from __future__ import annotations
 
 import logging
 from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from pinecone_store import PineconeStore
-from nl2sql_middleware_pinecone import NL2SQLSemanticRecallMiddleware
+from nl2sql_config import llm, store
+from nl2sql_semantic_recall import NL2SQLSemanticRecallMiddleware
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# System prompt for SQL generation
-SYSTEM_PROMPT = """
-You are an expert SQL query generator for an e-commerce database.
+# Enhanced system prompt
+SYSTEM_PROMPT = """You are an expert PostgreSQL query generator for an e-commerce database.
 
-Your task is to convert natural language questions into accurate SQL queries.
+**Your Task:**
+Convert natural language questions into accurate, executable SQL queries.
 
-**Database Schema Context:**
-The schema information will be provided in the conversation. Use it to understand:
-- Available tables and their purposes
-- Column names and data types
-- Relationships between tables (foreign keys, joins)
-- Common query patterns and examples
+**Database Schema:**
+You will receive detailed schema information including:
+• Table definitions and purposes
+• Column names, data types, and constraints  
+• Foreign key relationships and join patterns
+• Real-world query examples and patterns
 
-**Query Generation Rules:**
-1. Always use proper table and column names from the schema
-2. Use appropriate joins when querying multiple tables
-3. Include WHERE clauses for filtering
-4. Use aggregate functions (COUNT, SUM, AVG) when appropriate
-5. Add ORDER BY and LIMIT when relevant
-6. Follow PostgreSQL syntax
+**SQL Generation Rules:**
+
+1. **Accuracy First**
+   - Use exact table and column names from the schema
+   - Respect data types and constraints
+   - Include all necessary JOINs
+
+2. **Query Structure**
+   - Start with SELECT for retrieval queries
+   - Use WHERE for filtering conditions
+   - Apply JOINs for multi-table queries
+   - Add GROUP BY for aggregations
+   - Include ORDER BY for sorting
+   - Use LIMIT for pagination
+
+3. **PostgreSQL Syntax**
+   - Use PostgreSQL-specific functions when needed
+   - Date arithmetic: CURRENT_DATE, INTERVAL '1 month'
+   - String matching: ILIKE for case-insensitive
+   - Type casting: ::integer, ::date
+   - Array operations when appropriate
+
+4. **Performance Considerations**
+   - Avoid SELECT * when specific columns suffice
+   - Use indexes (mentioned in schema) wisely
+   - Prefer JOINs over subqueries when possible
+   - Use LIMIT for large result sets
+
+5. **Common Patterns**
+   - Aggregations: COUNT(*), SUM(), AVG(), MAX(), MIN()
+   - Time filters: WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+   - String search: WHERE name ILIKE '%keyword%'
+   - Top N: ORDER BY column DESC LIMIT N
+   - Grouping: GROUP BY x, y HAVING COUNT(*) > n
 
 **Output Format:**
-Return ONLY the SQL query, no explanations or markdown formatting.
-If you need clarification, ask a specific question about the schema.
+Return ONLY the SQL query. No explanations, no markdown, no comments.
 
 **Example:**
-Question: "Show me all customers in California"
-SQL: SELECT * FROM customers WHERE state = 'CA'
+Question: "Show top 10 customers by total spending"
+Response: SELECT c.customer_id, c.first_name, c.last_name, SUM(o.total_amount) AS total_spending FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY total_spending DESC LIMIT 10
 
-Now, generate SQL based on the user's question and the schema context provided.
+**When Uncertain:**
+If the schema context doesn't contain enough information, respond with:
+"CLARIFICATION NEEDED: [specific question about schema]"
+
+Now, generate the SQL query based on the user's question and the provided schema context.
 """.strip()
 
 
-def create_nl2sql_agent(
-    index_name: str = 'nl2sql-semantic-memory',
-    model: str = "gpt-4",
-    temperature: float = 0
-):
+async def build_agent():
     """
-    Create NL2SQL agent with Pinecone semantic memory.
-    
-    Args:
-        index_name: Pinecone index name
-        model: OpenAI model to use
-        temperature: LLM temperature (0 for deterministic)
-    
+    Build NL2SQL agent with semantic recall middleware.
+    Follows the pattern from your example.
+
     Returns:
-        LangChain Agent ready for .invoke()/.ainvoke()
+        LangChain Agent (Runnable) ready for .invoke/.ainvoke
     """
-    
-    # Initialize LLM
-    llm = ChatOpenAI(model=model, temperature=temperature)
-    
-    # Initialize embeddings
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-small')
-    
-    # Initialize Pinecone store
-    store = PineconeStore(
-        index_name=index_name,
-        embeddings=embeddings
-    )
-    
-    logger.info(
-        "Creating NL2SQL agent with Pinecone store.",
-        extra={
-            "phase": "agent",
-            "event": "agent_creation",
-            "index_name": index_name,
-            "model": model,
-        }
-    )
-    
-    # Create agent with middleware
+
+    logger.info("=" * 70)
+    logger.info("Building NL2SQL Agent")
+    logger.info("=" * 70)
+
+    # Create agent (following your example pattern)
     agent = create_agent(
         model=llm,
-        tools=[],  # No external tools needed - we use semantic memory
+        tools=[],  # No external tools needed
         system_prompt=SYSTEM_PROMPT,
-        store=store,
+        store=store,  # Imported from config
         middleware=[
-            NL2SQLSemanticRecallMiddleware(store=store)
+            NL2SQLSemanticRecallMiddleware()  # No parameters - imports store internally
         ]
     )
-    
-    logger.info(
-        "NL2SQL agent created successfully.",
-        extra={
-            "phase": "agent",
-            "event": "agent_created",
-        }
-    )
-    
+
+    logger.info("✓ NL2SQL Agent created successfully")
+    logger.info("=" * 70)
+    logger.info("")
+
     return agent
 
 
-async def generate_sql(agent, question: str) -> dict:
+async def generate_sql(question: str) -> dict:
     """
     Generate SQL query from natural language question.
-    
+
     Args:
-        agent: LangChain agent
         question: Natural language question
-    
+
     Returns:
-        Dict with sql_query, explanation, and context
+        Dict with sql_query and metadata
     """
-    logger.info(
-        "Generating SQL query.",
-        extra={
-            "phase": "agent",
-            "event": "sql_generation_start",
-            "question": question[:100],
-        }
-    )
-    
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info(f"GENERATING SQL FOR: {question}")
+    logger.info("=" * 70)
+
     try:
+        # Build agent
+        agent = await build_agent()
+
         # Invoke agent
         response = await agent.ainvoke(
             {"messages": [{"role": "user", "content": question}]}
         )
-        
+
         # Extract SQL from response
         messages = response.get("messages", [])
         sql_query = ""
-        
+
         # Get the last AI message
         for msg in reversed(messages):
             if hasattr(msg, 'content') and msg.content:
                 sql_query = msg.content
                 break
-        
-        logger.info(
-            "SQL generation completed.",
-            extra={
-                "phase": "agent",
-                "event": "sql_generation_done",
-                "sql_length": len(sql_query),
-            }
-        )
-        
+
+        logger.info("")
+        logger.info("=" * 70)
+        logger.info("SQL GENERATION COMPLETED")
+        logger.info("=" * 70)
+        logger.info(f"Generated SQL:")
+        logger.info(sql_query)
+        logger.info("=" * 70)
+        logger.info("")
+
         return {
             "sql_query": sql_query.strip(),
             "messages": messages,
             "full_response": response
         }
-        
+
     except Exception as e:
-        logger.error(
-            f"SQL generation failed: {e}",
-            extra={
-                "phase": "agent",
-                "event": "sql_generation_error",
-                "exception_type": type(e).__name__,
-            }
-        )
+        logger.error("")
+        logger.error("=" * 70)
+        logger.error(f"❌ SQL GENERATION FAILED: {type(e).__name__}")
+        logger.error(f"   {str(e)}")
+        logger.error("=" * 70)
+        logger.exception("Full traceback:")
         raise
 
 
 # Example usage
 if __name__ == "__main__":
     import asyncio
-    
+
     async def main():
-        # Create agent
-        agent = create_nl2sql_agent()
-        
         # Test queries
         questions = [
             "Show me all customers in California",
             "What are the top 5 products by revenue?",
-            "List orders from last month with their total amounts",
+            "Find customers who ordered Electronics products last month",
         ]
-        
+
         for question in questions:
-            print(f"\nQuestion: {question}")
-            print("-" * 70)
-            
-            result = await generate_sql(agent, question)
-            
-            print(f"SQL Query:\n{result['sql_query']}")
+            print(f"\n{'='*70}")
+            print(f"Question: {question}")
+            print('='*70)
+
+            result = await generate_sql(question)
+
+            print(f"\nGenerated SQL:")
+            print(result['sql_query'])
             print("=" * 70)
-    
+
     # Run
     asyncio.run(main())

@@ -40,26 +40,20 @@ def _json_len_bytes(obj: dict) -> int:
 def _compact_metadata(value: dict, *, text: str | None) -> dict:
     """
     Produce a metadata dict that respects Pinecone's 40KB metadata limit.
-    Keeps full text and other important fields.
+    For NL2SQL, we NEED full text in metadata for context injection.
     """
-    # Start with full metadata
+    # Start with full metadata including text
     meta = {
-        "url": value.get("url"),
-        "title": value.get("title"),
-        "accessed_at": value.get("accessed_at"),
-        "content_hash": value.get("content_hash"),
-        "memory_type": value.get("memory_type", "semantic"),
         "table_name": value.get("table_name"),
         "entity_type": value.get("entity_type"),
-        "text": text or "",  # Store full text
-        "keywords": value.get("keywords", ""),
+        "column_name": value.get("column_name"),
+        "keywords": value.get("keywords"),
+        "memory_type": value.get("memory_type", "semantic"),
+        "text": text or "",  # KEEP full text - needed for NL2SQL context
+        "text_len": len(text or "") if isinstance(text, str) else None,
     }
-    
-    # Add column name if present
-    if "column_name" in value:
-        meta["column_name"] = value["column_name"]
-    
-    # If over limit, truncate text
+
+    # If over limit, truncate text progressively
     if _json_len_bytes(meta) > _METADATA_SOFT_LIMIT:
         text_len = len(text or "")
         # Progressively reduce text
@@ -67,7 +61,7 @@ def _compact_metadata(value: dict, *, text: str | None) -> dict:
             meta["text"] = (text or "")[:cut]
             if _json_len_bytes(meta) <= _METADATA_SOFT_LIMIT:
                 break
-    
+
     return meta
 
 
@@ -95,15 +89,15 @@ class PineconeStore(BaseStore):
     ) -> None:
         self.index_name = index_name
         self.embed = embeddings
-        
+
         # Initialize Pinecone
         api_key = os.getenv('PINECONE_API_KEY')
         if not api_key:
             raise ValueError("PINECONE_API_KEY environment variable not set")
-        
+
         self.pc = Pinecone(api_key=api_key)
         self.index = self.pc.Index(index_name)
-        
+
         logger.info(
             "PineconeStore initialized.",
             extra={
@@ -378,7 +372,7 @@ class PineconeStore(BaseStore):
             # Pinecone doesn't have native namespace listing
             # We need to query and extract unique namespaces from metadata
             # This is an expensive operation, so we'll return a limited set
-            
+
             logger.warning(
                 "List namespaces is expensive in Pinecone - returning empty list.",
                 extra={

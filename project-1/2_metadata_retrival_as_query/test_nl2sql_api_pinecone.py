@@ -65,10 +65,13 @@ def main():
 
     # Test queries
     test_questions = [
+        # "Show me all customers in California",
+        # "Find products matching search keywords for catalog browsing and product discovery.",
+        # "What are the top 5 products by revenue?",
+        # "List orders from last month with their total amounts"
         "Show me all customers in California",
-        "Find products matching search keywords for catalog browsing and product discovery.",
         "What are the top 5 products by revenue?",
-        "List orders from last month with their total amounts"
+        "Find customers who ordered Electronics products last month",
     ]
 
     for question in test_questions:

@@ -1,22 +1,17 @@
 """
-Optimized Semantic Recall Middleware for NL2SQL
-- Single before_agent hook (removed redundant before_model)
-- Detailed logging of retrieved context
-- Enhanced system prompt
+Semantic Recall Middleware for NL2SQL
+Imports store from config module (does NOT take store as parameter)
 """
 
 import json
 from typing import Dict, Any, Optional
+import logging
 
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
-import logging
+from nl2sql_config import store  # Import store from config
 
-# Configure logging with more detail
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -29,15 +24,15 @@ def _extract_latest_human_message(messages: list) -> Optional[str]:
 
 
 def _format_retrieved_context(semantic_hits, procedural_hits) -> str:
-    """Format retrieved context with clear structure for logging and LLM"""
-
+    """Format retrieved context with clear structure"""
+    
     parts = []
-
+    
     # Group semantic hits by type
     tables = []
     columns = []
     relationships = []
-
+    
     for hit in semantic_hits:
         entity_type = hit.value.get('entity_type', 'unknown')
         if entity_type == 'table':
@@ -46,7 +41,7 @@ def _format_retrieved_context(semantic_hits, procedural_hits) -> str:
             columns.append(hit)
         elif entity_type == 'relationship':
             relationships.append(hit)
-
+    
     # Format tables
     if tables:
         parts.append("=== AVAILABLE TABLES ===")
@@ -57,7 +52,7 @@ def _format_retrieved_context(semantic_hits, procedural_hits) -> str:
             parts.append(f"\nTable: {table_name} (relevance: {score:.3f})")
             parts.append(text)
             parts.append("-" * 50)
-
+    
     # Format columns
     if columns:
         parts.append("\n=== TABLE COLUMNS ===")
@@ -69,7 +64,7 @@ def _format_retrieved_context(semantic_hits, procedural_hits) -> str:
             parts.append(f"\n{table_name}.{column_name} (relevance: {score:.3f})")
             parts.append(text)
             parts.append("-" * 50)
-
+    
     # Format relationships
     if relationships:
         parts.append("\n=== TABLE RELATIONSHIPS ===")
@@ -79,7 +74,7 @@ def _format_retrieved_context(semantic_hits, procedural_hits) -> str:
             parts.append(f"\nRelationship (relevance: {score:.3f})")
             parts.append(text)
             parts.append("-" * 50)
-
+    
     # Format query examples
     if procedural_hits:
         parts.append("\n=== QUERY EXAMPLES ===")
@@ -90,38 +85,28 @@ def _format_retrieved_context(semantic_hits, procedural_hits) -> str:
             parts.append(f"\nExample for {table_name} (relevance: {score:.3f})")
             parts.append(text)
             parts.append("-" * 50)
-
+    
     return "\n".join(parts)
 
 
-class OptimizedNL2SQLMiddleware(AgentMiddleware):
+class NL2SQLSemanticRecallMiddleware(AgentMiddleware):
     """
-    Optimized middleware with single before_agent hook.
-    Removed before_model to avoid redundant retrieval.
+    Middleware for NL2SQL semantic recall.
+    Uses store imported from config module (like the example you provided).
     """
 
-    def __init__(self, store, config: Optional[Dict] = None):
+    def __init__(self):
+        """Initialize middleware WITHOUT store parameter (imports from config)"""
         super().__init__()
-        self.store = store
-        self.config = config or {}
-
-        # Configuration
-        self.semantic_limit = self.config.get('semantic_limit', 25)
-        self.procedural_limit = self.config.get('procedural_limit', 10)
-        self.score_threshold = self.config.get('score_threshold', 0.65)
-
         logger.info("=" * 70)
-        logger.info("OptimizedNL2SQLMiddleware initialized")
-        logger.info(f"  Semantic limit: {self.semantic_limit}")
-        logger.info(f"  Procedural limit: {self.procedural_limit}")
-        logger.info(f"  Score threshold: {self.score_threshold}")
+        logger.info("NL2SQLSemanticRecallMiddleware initialized")
+        logger.info("  Store imported from nl2sql_config module")
         logger.info("=" * 70)
 
     @hook_config(can_jump_to=["end"])
     def before_agent(self, state, **kwargs) -> Optional[Dict[str, Any]]:
         """
         Retrieve relevant schema context before agent execution.
-        This is the ONLY hook - before_model removed to avoid redundancy.
         """
         logger.info("")
         logger.info("=" * 70)
@@ -138,16 +123,21 @@ class OptimizedNL2SQLMiddleware(AgentMiddleware):
 
             logger.info(f"📝 User Query: {query}")
             logger.info("")
-
+            
+            # Configuration
+            semantic_limit = 25
+            procedural_limit = 10
+            score_threshold = 0.65
+            
             # === SEMANTIC MEMORY SEARCH ===
-            logger.info(f"🔍 Searching semantic memory (limit={self.semantic_limit})...")
-            semantic_hits = self.store.search(
-                ("semantic",),
+            logger.info(f"🔍 Searching semantic memory (limit={semantic_limit})...")
+            semantic_hits = store.search(
+                ("semantic",),  # namespace as positional arg
                 query=query,
-                limit=self.semantic_limit
+                limit=semantic_limit
             )
-            logger.info(f" Retrieved {len(semantic_hits)},{semantic_hits} semantic chunks")
-
+            logger.info(f"   Retrieved {len(semantic_hits)} semantic chunks")
+            
             # Log top semantic results
             if semantic_hits:
                 logger.info("   Top 5 semantic results:")
@@ -156,22 +146,22 @@ class OptimizedNL2SQLMiddleware(AgentMiddleware):
                     table_name = hit.value.get('table_name', 'unknown')
                     column_name = hit.value.get('column_name', '')
                     score = hit.score
-
+                    
                     if column_name:
                         logger.info(f"     {i}. [{entity_type}] {table_name}.{column_name} (score: {score:.3f})")
                     else:
                         logger.info(f"     {i}. [{entity_type}] {table_name} (score: {score:.3f})")
-
+            
             # === PROCEDURAL MEMORY SEARCH ===
             logger.info("")
-            logger.info(f"🔍 Searching procedural memory (limit={self.procedural_limit})...")
-            procedural_hits = self.store.search(
-                ("procedural",),
+            logger.info(f"🔍 Searching procedural memory (limit={procedural_limit})...")
+            procedural_hits = store.search(
+                ("procedural",),  # namespace as positional arg
                 query=query,
-                limit=self.procedural_limit
+                limit=procedural_limit
             )
             logger.info(f"   Retrieved {len(procedural_hits)} procedural chunks")
-
+            
             # Log top procedural results
             if procedural_hits:
                 logger.info("   Top 3 procedural results:")
@@ -181,68 +171,68 @@ class OptimizedNL2SQLMiddleware(AgentMiddleware):
                     use_case = hit.value.get('text', '')[:80]
                     logger.info(f"     {i}. {table_name} (score: {score:.3f})")
                     logger.info(f"        {use_case}...")
-
+            
             # === FILTERING BY SCORE ===
             logger.info("")
-            logger.info(f"🎯 Filtering by score threshold: {self.score_threshold}")
-
-            semantic_filtered = [hit for hit in semantic_hits if hit.score >= self.score_threshold]
-            procedural_filtered = [hit for hit in procedural_hits if hit.score >= self.score_threshold]
-
+            logger.info(f"🎯 Filtering by score threshold: {score_threshold}")
+            
+            semantic_filtered = [hit for hit in semantic_hits if hit.score >= score_threshold]
+            procedural_filtered = [hit for hit in procedural_hits if hit.score >= score_threshold]
+            
             logger.info(f"   Semantic: {len(semantic_hits)} → {len(semantic_filtered)} (after filtering)")
             logger.info(f"   Procedural: {len(procedural_hits)} → {len(procedural_filtered)} (after filtering)")
-
+            
             total_hits = len(semantic_filtered) + len(procedural_filtered)
             logger.info(f"   Total relevant chunks: {total_hits}")
-
+            
             # === BUILD CONTEXT ===
             if total_hits > 0:
                 logger.info("")
                 logger.info("📦 Building context for LLM...")
-
+                
                 context = _format_retrieved_context(semantic_filtered, procedural_filtered)
-
+                
                 logger.info(f"   Context length: {len(context)} characters")
                 logger.info(f"   Context contains:")
-
+                
                 # Count entity types
                 tables = sum(1 for h in semantic_filtered if h.value.get('entity_type') == 'table')
                 columns = sum(1 for h in semantic_filtered if h.value.get('entity_type') == 'column')
                 relationships = sum(1 for h in semantic_filtered if h.value.get('entity_type') == 'relationship')
-
+                
                 logger.info(f"     - {tables} tables")
                 logger.info(f"     - {columns} columns")
                 logger.info(f"     - {relationships} relationships")
                 logger.info(f"     - {len(procedural_filtered)} query examples")
-
+                
                 # === INJECT CONTEXT ===
                 logger.info("")
                 logger.info("💉 Injecting context into agent state...")
-
+                
                 state["messages"].append(
                     SystemMessage(content=f"Database schema context:\n\n{context}")
                 )
-
+                
                 logger.info("   ✓ Context injected as SystemMessage")
                 logger.info(f"   Total messages in state: {len(state['messages'])}")
-
+                
                 # Log sample of context (first 500 chars)
                 logger.info("")
                 logger.info("📄 Context preview (first 500 chars):")
                 logger.info("-" * 70)
                 logger.info(context[:500] + "...")
                 logger.info("-" * 70)
-
+                
             else:
                 logger.warning("")
                 logger.warning("⚠️  No relevant context found (all scores below threshold)")
                 logger.warning("   Agent will proceed without schema context")
-
+            
             logger.info("")
             logger.info("✓ Semantic recall completed - continuing with agent")
             logger.info("=" * 70)
             logger.info("")
-
+            
             return None
 
         except Exception as e:
@@ -254,66 +244,3 @@ class OptimizedNL2SQLMiddleware(AgentMiddleware):
             logger.exception("Full traceback:")
             logger.warning("Continuing with agent execution (without context)")
             return None
-
-
-# Enhanced system prompt
-ENHANCED_SYSTEM_PROMPT = """You are an expert PostgreSQL query generator for an e-commerce database.
-
-**Your Task:**
-Convert natural language questions into accurate, executable SQL queries.
-
-**Database Schema:**
-You will receive detailed schema information including:
-• Table definitions and purposes
-• Column names, data types, and constraints
-• Foreign key relationships and join patterns
-• Real-world query examples and patterns
-
-**SQL Generation Rules:**
-
-1. **Accuracy First**
-   - Use exact table and column names from the schema
-   - Respect data types and constraints
-   - Include all necessary JOINs
-
-2. **Query Structure**
-   - Start with SELECT for retrieval queries
-   - Use WHERE for filtering conditions
-   - Apply JOINs for multi-table queries
-   - Add GROUP BY for aggregations
-   - Include ORDER BY for sorting
-   - Use LIMIT for pagination
-
-3. **PostgreSQL Syntax**
-   - Use PostgreSQL-specific functions when needed
-   - Date arithmetic: CURRENT_DATE, INTERVAL '1 month'
-   - String matching: ILIKE for case-insensitive
-   - Type casting: ::integer, ::date
-   - Array operations when appropriate
-
-4. **Performance Considerations**
-   - Avoid SELECT * when specific columns suffice
-   - Use indexes (mentioned in schema) wisely
-   - Prefer JOINs over subqueries when possible
-   - Use LIMIT for large result sets
-
-5. **Common Patterns**
-   - Aggregations: COUNT(*), SUM(), AVG(), MAX(), MIN()
-   - Time filters: WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
-   - String search: WHERE name ILIKE '%keyword%'
-   - Top N: ORDER BY column DESC LIMIT N
-   - Grouping: GROUP BY x, y HAVING COUNT(*) > n
-
-**Output Format:**
-Return ONLY the SQL query. No explanations, no markdown, no comments.
-
-**Example:**
-Question: "Show top 10 customers by total spending"
-Response: SELECT c.customer_id, c.first_name, c.last_name, SUM(o.total_amount) AS total_spending FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY total_spending DESC LIMIT 10
-
-**When Uncertain:**
-If the schema context doesn't contain enough information, respond with:
-"CLARIFICATION NEEDED: [specific question about schema]"
-
-Now, generate the SQL query based on the user's question and the provided schema context.
-""".strip()
