@@ -81,7 +81,7 @@ docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION
 cd generic-query-executor
 
 # Build Docker image
-docker build -t generic-query-executor:latest .
+docker buildx build --platform linux/amd64 --output type=docker --provenance=false -t generic-query-executor:latest --no-cache .
 
 # Tag image for ECR
 docker tag generic-query-executor:latest \
@@ -99,7 +99,8 @@ cd ..
 cd customers-api
 
 # Build Docker image
-docker build -t customers-api:latest .
+docker buildx build --platform linux/amd64 --output type=docker --provenance=false -t customers-api:latest --no-cache .
+
 
 # Tag image for ECR
 docker tag customers-api:latest \
@@ -117,7 +118,8 @@ cd ..
 cd orders-api
 
 # Build Docker image
-docker build -t orders-api:latest .
+docker buildx build --platform linux/amd64 --output type=docker --provenance=false -t orders-api:latest --no-cache .
+
 
 # Tag image for ECR
 docker tag orders-api:latest \
