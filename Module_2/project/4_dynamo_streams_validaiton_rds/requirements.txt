@@ -1,0 +1,12 @@
+# Lambda Product Validator Dependencies
+# =======================================
+
+# PostgreSQL driver (compiled version for Lambda)
+psycopg2-binary==2.9.9
+
+# AWS SDK
+boto3>=1.34.0
+botocore>=1.34.0
+
+# AWS Secrets Manager caching
+aws-secretsmanager-caching>=1.1.1.5
