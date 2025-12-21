@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DynamoDB Visual Guide</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .diagram-container {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #232F3E;
+        }
+        .diagram-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #FF9900;
+        }
+    </style>
+</head>
+<body>
+    <h1>DynamoDB Visual Guide</h1>
+
+    <!-- Diagram 1: DynamoDB Architecture -->
+    <div class="diagram-container">
+        <div class="diagram-title">1. DynamoDB High-Level Architecture</div>
+        <svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <style>
+                    .layer { fill: #E8F4F8; stroke: #232F3E; stroke-width: 2; }
+                    .component { fill: white; stroke: #232F3E; stroke-width: 2; }
+                    .aws-service { fill: #FF9900; stroke: #232F3E; stroke-width: 2; }
+                    .text { font-family: Arial; font-size: 14px; fill: #232F3E; }
+                    .title { font-family: Arial; font-size: 16px; font-weight: bold; fill: #232F3E; }
+                    .small { font-family: Arial; font-size: 12px; fill: #666; }
+                    .arrow { stroke: #FF9900; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+                </style>
+                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                    <polygon points="0 0, 10 3, 0 6" fill="#FF9900" />
+                </marker>
+            </defs>
+
+            <!-- Title -->
+            <text x="500" y="30" class="title" text-anchor="middle" font-size="20">DynamoDB Architecture</text>
+
+            <!-- Application Layer -->
+            <rect x="50" y="60" width="900" height="100" class="layer" rx="5"/>
+            <text x="70" y="85" class="title">Application Layer</text>
+            
+            <rect x="100" y="100" width="150" height="40" class="component" rx="3"/>
+            <text x="175" y="125" class="text" text-anchor="middle">Web App</text>
+            
+            <rect x="280" y="100" width="150" height="40" class="component" rx="3"/>
+            <text x="355" y="125" class="text" text-anchor="middle">Mobile App</text>
+            
+            <rect x="460" y="100" width="150" height="40" class="component" rx="3"/>
+            <text x="535" y="125" class="text" text-anchor="middle">Lambda</text>
+            
+            <rect x="640" y="100" width="150" height="40" class="component" rx="3"/>
+            <text x="715" y="125" class="text" text-anchor="middle">API Gateway</text>
+
+            <!-- Arrows to SDK -->
+            <path d="M 175 140 L 175 180" class="arrow"/>
+            <path d="M 355 140 L 355 180" class="arrow"/>
+            <path d="M 535 140 L 535 180" class="arrow"/>
+            <path d="M 715 140 L 715 180" class="arrow"/>
+
+            <!-- SDK Layer -->
+            <rect x="50" y="180" width="900" height="80" class="layer" rx="5"/>
+            <text x="70" y="205" class="title">AWS SDK / CLI</text>
+            
+            <rect x="200" y="220" width="600" height="30" class="aws-service" rx="3"/>
+            <text x="500" y="240" class="text" text-anchor="middle" fill="white">Boto3 (Python) / AWS SDK for JavaScript / Java SDK</text>
+
+            <!-- Arrow to DynamoDB API -->
+            <path d="M 500 250 L 500 280" class="arrow"/>
+
+            <!-- DynamoDB Service Layer -->
+            <rect x="50" y="280" width="900" height="120" class="layer" rx="5"/>
+            <text x="70" y="305" class="title">DynamoDB Service Layer</text>
+            
+            <rect x="100" y="320" width="200" height="60" class="component" rx="3"/>
+            <text x="200" y="345" class="text" text-anchor="middle">Request Router</text>
+            <text x="200" y="365" class="small" text-anchor="middle">Authentication</text>
+            
+            <rect x="330" y="320" width="200" height="60" class="component" rx="3"/>
+            <text x="430" y="345" class="text" text-anchor="middle">Partition Manager</text>
+            <text x="430" y="365" class="small" text-anchor="middle">Distribution Logic</text>
+            
+            <rect x="560" y="320" width="200" height="60" class="component" rx="3"/>
+            <text x="660" y="345" class="text" text-anchor="middle">Auto Scaling</text>
+            <text x="660" y="365" class="small" text-anchor="middle">Capacity Management</text>
+
+            <!-- Arrow to Storage -->
+            <path d="M 500 400 L 500 430" class="arrow"/>
+
+            <!-- Storage Layer -->
+            <rect x="50" y="430" width="900" height="240" class="layer" rx="5"/>
+            <text x="70" y="455" class="title">Storage Layer (SSD-backed)</text>
+
+            <!-- Partitions -->
+            <rect x="100" y="480" width="220" height="160" fill="#D5F4E6" stroke="#1E8449" stroke-width="2" rx="3"/>
+            <text x="210" y="505" class="title" text-anchor="middle">Partition 1</text>
+            <text x="210" y="525" class="small" text-anchor="middle">Hash Range: 0 - 33%</text>
+            
+            <rect x="120" y="540" width="60" height="30" class="component" rx="2"/>
+            <text x="150" y="560" class="small" text-anchor="middle">AZ-A</text>
+            
+            <rect x="190" y="540" width="60" height="30" class="component" rx="2"/>
+            <text x="220" y="560" class="small" text-anchor="middle">AZ-B</text>
+            
+            <rect x="155" y="580" width="60" height="30" class="component" rx="2"/>
+            <text x="185" y="600" class="small" text-anchor="middle">AZ-C</text>
+
+            <rect x="360" y="480" width="220" height="160" fill="#FCF3CF" stroke="#B7950B" stroke-width="2" rx="3"/>
+            <text x="470" y="505" class="title" text-anchor="middle">Partition 2</text>
+            <text x="470" y="525" class="small" text-anchor="middle">Hash Range: 34% - 66%</text>
+            
+            <rect x="380" y="540" width="60" height="30" class="component" rx="2"/>
+            <text x="410" y="560" class="small" text-anchor="middle">AZ-A</text>
+            
+            <rect x="450" y="540" width="60" height="30" class="component" rx="2"/>
+            <text x="480" y="560" class="small" text-anchor="middle">AZ-B</text>
+            
+            <rect x="415" y="580" width="60" height="30" class="component" rx="2"/>
+            <text x="445" y="600" class="small" text-anchor="middle">AZ-C</text>
+
+            <rect x="620" y="480" width="220" height="160" fill="#FADBD8" stroke="#922B21" stroke-width="2" rx="3"/>
+            <text x="730" y="505" class="title" text-anchor="middle">Partition N</text>
+            <text x="730" y="525" class="small" text-anchor="middle">Hash Range: 67% - 100%</text>
+            
+            <rect x="640" y="540" width="60" height="30" class="component" rx="2"/>
+            <text x="670" y="560" class="small" text-anchor="middle">AZ-A</text>
+            
+            <rect x="710" y="540" width="60" height="30" class="component" rx="2"/>
+            <text x="740" y="560" class="small" text-anchor="middle">AZ-B</text>
+            
+            <rect x="675" y="580" width="60" height="30" class="component" rx="2"/>
+            <text x="705" y="600" class="small" text-anchor="middle">AZ-C</text>
+
+            <text x="500" y="670" class="small" text-anchor="middle">Each partition replicated across 3 Availability Zones</text>
+        </svg>
+    </div>
+
+    <!-- Diagram 2: Primary Keys -->
+    <div class="diagram-container">
+        <div class="diagram-title">2. Primary Key Types</div>
+        <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+            <!-- Simple Primary Key -->
+            <text x="200" y="40" class="title" text-anchor="middle">Simple Primary Key (Partition Key Only)</text>
+            
+            <rect x="50" y="60" width="300" height="180" fill="#E8F4F8" stroke="#232F3E" stroke-width="2" rx="5"/>
+            
+            <text x="70" y="90" class="text" font-weight="bold">Table: UserProfiles</text>
+            
+            <!-- Table header -->
+            <rect x="70" y="100" width="260" height="30" fill="#FF9900" rx="3"/>
+            <text x="200" y="120" class="text" text-anchor="middle" fill="white" font-weight="bold">UserID (PK)</text>
+            
+            <!-- Table rows -->
+            <rect x="70" y="130" width="260" height="30" class="component" rx="3"/>
+            <text x="200" y="150" class="text" text-anchor="middle">user123</text>
+            
+            <rect x="70" y="160" width="260" height="30" class="component" rx="3"/>
+            <text x="200" y="180" class="text" text-anchor="middle">user456</text>
+            
+            <rect x="70" y="190" width="260" height="30" class="component" rx="3"/>
+            <text x="200" y="210" class="text" text-anchor="middle">user789</text>
+
+            <text x="200" y="250" class="small" text-anchor="middle">Each UserID must be unique</text>
+            <text x="200" y="265" class="small" text-anchor="middle">Good for: Simple lookups by ID</text>
+
+            <!-- Composite Primary Key -->
+            <text x="700" y="40" class="title" text-anchor="middle">Composite Primary Key (Partition + Sort Key)</text>
+            
+            <rect x="450" y="60" width="500" height="180" fill="#E8F4F8" stroke="#232F3E" stroke-width="2" rx="5"/>
+            
+            <text x="470" y="90" class="text" font-weight="bold">Table: OrderHistory</text>
+            
+            <!-- Table header -->
+            <rect x="470" y="100" width="200" height="30" fill="#FF9900" rx="3"/>
+            <text x="570" y="120" class="text" text-anchor="middle" fill="white" font-weight="bold">UserID (PK)</text>
+            
+            <rect x="670" y="100" width="260" height="30" fill="#FF9900" rx="3"/>
+            <text x="800" y="120" class="text" text-anchor="middle" fill="white" font-weight="bold">OrderTimestamp (SK)</text>
+            
+            <!-- Table rows -->
+            <rect x="470" y="130" width="200" height="30" class="component" rx="3"/>
+            <text x="570" y="150" class="text" text-anchor="middle">user123</text>
+            <rect x="670" y="130" width="260" height="30" class="component" rx="3"/>
+            <text x="800" y="150" class="text" text-anchor="middle">2024-12-01T10:30:00Z</text>
+            
+            <rect x="470" y="160" width="200" height="30" class="component" rx="3"/>
+            <text x="570" y="180" class="text" text-anchor="middle">user123</text>
+            <rect x="670" y="160" width="260" height="30" class="component" rx="3"/>
+            <text x="800" y="180" class="text" text-anchor="middle">2024-12-15T14:20:00Z</text>
+            
+            <rect x="470" y="190" width="200" height="30" class="component" rx="3"/>
+            <text x="570" y="210" class="text" text-anchor="middle">user456</text>
+            <rect x="670" y="190" width="260" height="30" class="component" rx="3"/>
+            <text x="800" y="210" class="text" text-anchor="middle">2024-12-10T09:15:00Z</text>
+
+            <text x="700" y="250" class="small" text-anchor="middle">PK + SK combination must be unique</text>
+            <text x="700" y="265" class="small" text-anchor="middle">Good for: Time-series, hierarchical data</text>
+
+            <!-- Key Visual -->
+            <rect x="50" y="320" width="900" height="150" fill="#F0F0F0" stroke="#232F3E" stroke-width="2" rx="5"/>
+            <text x="500" y="350" class="title" text-anchor="middle">Key Benefits</text>
+            
+            <text x="80" y="385" class="text">✓ Partition Key determines data distribution across partitions</text>
+            <text x="80" y="410" class="text">✓ Sort Key enables range queries within a partition</text>
+            <text x="80" y="435" class="text">✓ Composite keys allow storing related items together (good for Query operations)</text>
+            <text x="80" y="460" class="text">✓ Choose partition key with high cardinality for even distribution</text>
+        </svg>
+    </div>
+
+    <!-- Diagram 3: Indexes -->
+    <div class="diagram-container">
+        <div class="diagram-title">3. Global Secondary Index (GSI) vs Local Secondary Index (LSI)</div>
+        <svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg">
+            <!-- Base Table -->
+            <text x="500" y="30" class="title" text-anchor="middle" font-size="18">Base Table</text>
+            
+            <rect x="200" y="50" width="600" height="120" fill="#E8F4F8" stroke="#232F3E" stroke-width="2" rx="5"/>
+            <text x="220" y="75" class="text" font-weight="bold">Products Table</text>
+            
+            <!-- Headers -->
+            <rect x="220" y="85" width="140" height="25" fill="#FF9900" rx="2"/>
+            <text x="290" y="103" class="text" text-anchor="middle" fill="white" font-weight="bold">ProductID (PK)</text>
+            
+            <rect x="360" y="85" width="120" height="25" fill="#666" rx="2"/>
+            <text x="420" y="103" class="text" text-anchor="middle" fill="white">Category</text>
+            
+            <rect x="480" y="85" width="90" height="25" fill="#666" rx="2"/>
+            <text x="525" y="103" class="text" text-anchor="middle" fill="white">Price</text>
+            
+            <rect x="570" y="85" width="90" height="25" fill="#666" rx="2"/>
+            <text x="615" y="103" class="text" text-anchor="middle" fill="white">Rating</text>
+            
+            <rect x="660" y="85" width="120" height="25" fill="#666" rx="2"/>
+            <text x="720" y="103" class="text" text-anchor="middle" fill="white">InStock</text>
+            
+            <!-- Rows -->
+            <text x="290" y="130" class="small" text-anchor="middle">PROD-001</text>
+            <text x="420" y="130" class="small" text-anchor="middle">Electronics</text>
+            <text x="525" y="130" class="small" text-anchor="middle">299.99</text>
+            <text x="615" y="130" class="small" text-anchor="middle">4.5</text>
+            <text x="720" y="130" class="small" text-anchor="middle">true</text>
+            
+            <text x="290" y="150" class="small" text-anchor="middle">PROD-002</text>
+            <text x="420" y="150" class="small" text-anchor="middle">Books</text>
+            <text x="525" y="150" class="small" text-anchor="middle">19.99</text>
+            <text x="615" y="150" class="small" text-anchor="middle">4.8</text>
+            <text x="720" y="150" class="small" text-anchor="middle">true</text>
+
+            <!-- Arrow -->
+            <path d="M 300 170 L 300 210" stroke="#FF9900" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+            <path d="M 700 170 L 700 210" stroke="#4A90E2" stroke-width="3" fill="none" marker-end="url(#arrowhead2)"/>
+            
+            <marker id="arrowhead2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                <polygon points="0 0, 10 3, 0 6" fill="#4A90E2" />
+            </marker>
+
+            <!-- GSI -->
+            <rect x="50" y="230" width="500" height="200" fill="#FFF5E6" stroke="#FF9900" stroke-width="3" rx="5"/>
+            <text x="70" y="260" class="title" fill="#FF9900">Global Secondary Index (GSI)</text>
+            <text x="70" y="280" class="text">CategoryPriceIndex</text>
+            
+            <!-- GSI Headers -->
+            <rect x="70" y="295" width="140" height="25" fill="#FF9900" rx="2"/>
+            <text x="140" y="313" class="text" text-anchor="middle" fill="white" font-weight="bold">Category (PK)</text>
+            
+            <rect x="210" y="295" width="100" height="25" fill="#FF9900" rx="2"/>
+            <text x="260" y="313" class="text" text-anchor="middle" fill="white" font-weight="bold">Price (SK)</text>
+            
+            <rect x="310" y="295" width="110" height="25" fill="#666" rx="2"/>
+            <text x="365" y="313" class="text" text-anchor="middle" fill="white">ProductID</text>
+            
+            <rect x="420" y="295" width="100" height="25" fill="#666" rx="2"/>
+            <text x="470" y="313" class="text" text-anchor="middle" fill="white">Rating</text>
+            
+            <!-- GSI Rows -->
+            <text x="140" y="340" class="small" text-anchor="middle">Books</text>
+            <text x="260" y="340" class="small" text-anchor="middle">19.99</text>
+            <text x="365" y="340" class="small" text-anchor="middle">PROD-002</text>
+            <text x="470" y="340" class="small" text-anchor="middle">4.8</text>
+            
+            <text x="140" y="360" class="small" text-anchor="middle">Electronics</text>
+            <text x="260" y="360" class="small" text-anchor="middle">299.99</text>
+            <text x="365" y="360" class="small" text-anchor="middle">PROD-001</text>
+            <text x="470" y="360" class="small" text-anchor="middle">4.5</text>
+            
+            <text x="70" y="390" class="small">✓ Different PK and SK from base table</text>
+            <text x="70" y="405" class="small">✓ Can be created/deleted anytime</text>
+            <text x="70" y="420" class="small">✓ Has own capacity units (separate billing)</text>
+
+            <!-- LSI -->
+            <rect x="580" y="230" width="400" height="200" fill="#E6F3FF" stroke="#4A90E2" stroke-width="3" rx="5"/>
+            <text x="600" y="260" class="title" fill="#4A90E2">Local Secondary Index (LSI)</text>
+            <text x="600" y="280" class="text">ProductRatingIndex</text>
+            
+            <!-- LSI Headers -->
+            <rect x="600" y="295" width="140" height="25" fill="#4A90E2" rx="2"/>
+            <text x="670" y="313" class="text" text-anchor="middle" fill="white" font-weight="bold">ProductID (PK)</text>
+            
+            <rect x="740" y="295" width="100" height="25" fill="#4A90E2" rx="2"/>
+            <text x="790" y="313" class="text" text-anchor="middle" fill="white" font-weight="bold">Rating (SK)</text>
+            
+            <rect x="840" y="295" width="110" height="25" fill="#666" rx="2"/>
+            <text x="895" y="313" class="text" text-anchor="middle" fill="white">Category</text>
+            
+            <!-- LSI Rows -->
+            <text x="670" y="340" class="small" text-anchor="middle">PROD-001</text>
+            <text x="790" y="340" class="small" text-anchor="middle">4.5</text>
+            <text x="895" y="340" class="small" text-anchor="middle">Electronics</text>
+            
+            <text x="670" y="360" class="small" text-anchor="middle">PROD-002</text>
+            <text x="790" y="360" class="small" text-anchor="middle">4.8</text>
+            <text x="895" y="360" class="small" text-anchor="middle">Books</text>
+            
+            <text x="600" y="390" class="small">✓ Same PK as base table, different SK</text>
+            <text x="600" y="405" class="small">✓ Must be created at table creation</text>
+            <text x="600" y="420" class="small">✓ Shares capacity with base table</text>
+
+            <!-- Use Cases -->
+            <rect x="50" y="460" width="900" height="220" fill="#F9F9F9" stroke="#232F3E" stroke-width="2" rx="5"/>
+            <text x="500" y="490" class="title" text-anchor="middle">When to Use Each Index Type</text>
+            
+            <!-- GSI Use Cases -->
+            <text x="70" y="520" class="title" fill="#FF9900">Use GSI When:</text>
+            <text x="70" y="545" class="text">• You need to query by different attributes (new partition key)</text>
+            <text x="70" y="565" class="text">• Query pattern unknown at table creation time</text>
+            <text x="70" y="585" class="text">• Need eventually consistent reads only</text>
+            <text x="70" y="605" class="text">• Want to control capacity separately</text>
+            <text x="70" y="625" class="small" fill="#666">Example: Query products by Category or Brand</text>
+            
+            <!-- LSI Use Cases -->
+            <text x="530" y="520" class="title" fill="#4A90E2">Use LSI When:</text>
+            <text x="530" y="545" class="text">• Same partition key, different sort order needed</text>
+            <text x="530" y="565" class="text">• Query patterns known upfront</text>
+            <text x="530" y="585" class="text">• Need strongly consistent reads</text>
+            <text x="530" y="605" class="text">• Want to share capacity with base table</text>
+            <text x="530" y="625" class="small" fill="#666">Example: Sort products by rating within same ProductID</text>
+            
+            <!-- Limits -->
+            <rect x="70" y="645" width="860" height="25" fill="#FFE6E6" stroke="#E74C3C" stroke-width="1" rx="3"/>
+            <text x="500" y="663" class="small" text-anchor="middle" font-weight="bold">Limits: 20 GSIs per table | 5 LSIs per table (max)</text>
+        </svg>
+    </div>
+
+    <!-- Diagram 4: Query vs Scan -->
+    <div class="diagram-container">
+        <div class="diagram-title">4. Query vs Scan Operations</div>
+        <svg viewBox="0 0 1000 600" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <style>
+                    .efficient { fill: #D5F4E6; stroke: #1E8449; stroke-width: 2; }
+                    .inefficient { fill: #FADBD8; stroke: #922B21; stroke-width: 2; }
+                </style>
+            </defs>
+
+            <!-- Query Operation -->
+            <text x="250" y="40" class="title" text-anchor="middle" fill="#1E8449">QUERY Operation ✓ Efficient</text>
+            
+            <rect x="50" y="60" width="400" height="240" class="efficient" rx="5"/>
+            
+            <text x="70" y="90" class="text" font-weight="bold">Query: Get all orders for user123</text>
+            <text x="70" y="110" class="small">KeyConditionExpression: UserID = 'user123'</text>
+            
+            <!-- Partition visualization -->
+            <rect x="80" y="130" width="350" height="140" fill="white" stroke="#1E8449" stroke-width="1" rx="3"/>
+            <text x="255" y="150" class="text" text-anchor="middle" font-weight="bold">Partition: user123</text>
+            
+            <rect x="100" y="165" width="300" height="25" fill="#F0F0F0" rx="2"/>
+            <text x="250" y="182" class="small" text-anchor="middle">2024-11-15 (Skipped - before range)</text>
+            
+            <rect x="100" y="195" width="300" height="25" fill="#D5F4E6" rx="2"/>
+            <text x="250" y="212" class="small" text-anchor="middle">2024-12-01 ✓ Returned</text>
+            
+            <rect x="100" y="225" width="300" height="25" fill="#D5F4E6" rx="2"/>
+            <text x="250" y="242" class="small" text-anchor="middle">2024-12-15 ✓ Returned</text>
+            
+            <rect x="100" y="255" width="300" height="25" fill="#F0F0F0" rx="2"/>
+            <text x="250" y="272" class="small" text-anchor="middle">2025-01-05 (Skipped - after range)</text>
+            
+            <text x="70" y="310" class="text" font-weight="bold">Result:</text>
+            <text x="70" y="330" class="small">• Reads: 2 items (only what's needed)</text>
+            <text x="70" y="345" class="small">• Cost: 2 RCUs (very low)</text>
+            <text x="70" y="360" class="small">• Speed: <10ms (very fast)</text>
+
+            <!-- Scan Operation -->
+            <text x="700" y="40" class="title" text-anchor="middle" fill="#922B21">SCAN Operation ✗ Inefficient</text>
+            
+            <rect x="550" y="60" width="400" height="240" class="inefficient" rx="5"/>
+            
+            <text x="570" y="90" class="text" font-weight="bold">Scan: Find all products with Price < 50</text>
+            <text x="570" y="110" class="small">FilterExpression: Price < 50</text>
+            
+            <!-- Multiple partitions -->
+            <rect x="570" y="130" width="160" height="60" fill="white" stroke="#922B21" stroke-width="1" rx="3"/>
+            <text x="650" y="150" class="small" text-anchor="middle" font-weight="bold">Partition 1</text>
+            <text x="650" y="165" class="small" text-anchor="middle">Read: 2500 items</text>
+            <text x="650" y="180" class="small" text-anchor="middle">Return: 8 items</text>
+            
+            <rect x="740" y="130" width="160" height="60" fill="white" stroke="#922B21" stroke-width="1" rx="3"/>
+            <text x="820" y="150" class="small" text-anchor="middle" font-weight="bold">Partition 2</text>
+            <text x="820" y="165" class="small" text-anchor="middle">Read: 2500 items</text>
+            <text x="820" y="180" class="small" text-anchor="middle">Return: 12 items</text>
+            
+            <rect x="570" y="200" width="160" height="60" fill="white" stroke="#922b21" stroke-width="1" rx="3"/>
+            <text x="650" y="220" class="small" text-anchor="middle" font-weight="bold">Partition 3</text>
+            <text x="650" y="235" class="small" text-anchor="middle">Read: 2500 items</text>
+            <text x="650" y="250" class="small" text-anchor="middle">Return: 5 items</text>
+            
+            <rect x="740" y="200" width="160" height="60" fill="white" stroke="#922B21" stroke-width="1" rx="3"/>
+            <text x="820" y="220" class="small" text-anchor="middle" font-weight="bold">Partition N</text>
+            <text x="820" y="235" class="small" text-anchor="middle">Read: 2500 items</text>
+            <text x="820" y="250" class="small" text-anchor="middle">Return: 10 items</text>
+            
+            <text x="570" y="285" class="text" font-weight="bold">Result:</text>
+            <text x="570" y="305" class="small">• Reads: 10,000 items (entire table!)</text>
+            <text x="570" y="320" class="small">• Returned: 35 items</text>
+            <text x="570" y="335" class="small">• Cost: 2,500 RCUs (very high!)</text>
+            <text x="570" y="350" class="small">• Speed: 500ms+ (slow)</text>
+
+            <!-- Comparison Table -->
+            <rect x="50" y="380" width="900" height="200" fill="#F9F9F9" stroke="#232F3E" stroke-width="2" rx="5"/>
+            <text x="500" y="410" class="title" text-anchor="middle">Comparison Summary</text>
+            
+            <!-- Headers -->
+            <rect x="70" y="430" width="200" height="30" fill="#232F3E" rx="2"/>
+            <text x="170" y="450" class="text" text-anchor="middle" fill="white" font-weight="bold">Aspect</text>
+            
+            <rect x="270" y="430" width="310" height="30" fill="#1E8449" rx="2"/>
+            <text x="425" y="450" class="text" text-anchor="middle" fill="white" font-weight="bold">Query</text>
+            
+            <rect x="580" y="430" width="350" height="30" fill="#922B21" rx="2"/>
+            <text x="755" y="450" class="text" text-anchor="middle" fill="white" font-weight="bold">Scan</text>
+            
+            <!-- Row 1: Speed -->
+            <rect x="70" y="460" width="200" height="25" fill="#E0E0E0" rx="2"/>
+            <text x="170" y="477" class="small" text-anchor="middle">Speed</text>
+            <rect x="270" y="460" width="310" height="25" fill="white" rx="2"/>
+            <text x="425" y="477" class="small" text-anchor="middle">Fast (single partition)</text>
+            <rect x="580" y="460" width="350" height="25" fill="white" rx="2"/>
+            <text x="755" y="477" class="small" text-anchor="middle">Slow (all partitions)</text>
+            
+            <!-- Row 2: Cost -->
+            <rect x="70" y="485" width="200" height="25" fill="#E0E0E0" rx="2"/>
+            <text x="170" y="502" class="small" text-anchor="middle">Cost</text>
+            <rect x="270" y="485" width="310" height="25" fill="white" rx="2"/>
+            <text x="425" y="502" class="small" text-anchor="middle">Low (only reads needed items)</text>
+            <rect x="580" y="485" width="350" height="25" fill="white" rx="2"/>
+            <text x="755" y="502" class="small" text-anchor="middle">High (reads entire table)</text>
+            
+            <!-- Row 3: Requirements -->
+            <rect x="70" y="510" width="200" height="25" fill="#E0E0E0" rx="2"/>
+            <text x="170" y="527" class="small" text-anchor="middle">Requirements</text>
+            <rect x="270" y="510" width="310" height="25" fill="white" rx="2"/>
+            <text x="425" y="527" class="small" text-anchor="middle">Must specify partition key</text>
+            <rect x="580" y="510" width="350" height="25" fill="white" rx="2"/>
+            <text x="755" y="527" class="small" text-anchor="middle">No key required (any filter)</text>
+            
+            <!-- Row 4: Use Case -->
+            <rect x="70" y="535" width="200" height="25" fill="#E0E0E0" rx="2"/>
+            <text x="170" y="552" class="small" text-anchor="middle">Best For</text>
+            <rect x="270" y="535" width="310" height="25" fill="white" rx="2"/>
+            <text x="425" y="552" class="small" text-anchor="middle">Known access patterns</text>
+            <rect x="580" y="535" width="350" height="25" fill="white" rx="2"/>
+            <text x="755" y="552" class="small" text-anchor="middle">Ad-hoc queries, data export</text>
+            
+            <text x="500" y="575" class="small" text-anchor="middle" font-weight="bold" fill="#E74C3C">⚠️ Avoid Scan in production - use Query with proper indexes instead!</text>
+        </svg>
+    </div>
+
+    <!-- Diagram 5: Data Distribution -->
+    <div class="diagram-container">
+        <div class="diagram-title">5. How DynamoDB Distributes Data (Hashing)</div>
+        <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+            <!-- Items being inserted -->
+            <rect x="50" y="50" width="200" height="350" fill="#F0F0F0" stroke="#232F3E" stroke-width="2" rx="5"/>
+            <text x="150" y="80" class="title" text-anchor="middle">Items to Insert</text>
+            
+            <rect x="70" y="100" width="160" height="40" class="component" rx="3"/>
+            <text x="150" y="125" class="text" text-anchor="middle">UserID: "user123"</text>
+            
+            <rect x="70" y="150" width="160" height="40" class="component" rx="3"/>
+            <text x="150" y="175" class="text" text-anchor="middle">UserID: "user456"</text>
+            
+            <rect x="70" y="200" width="160" height="40" class="component" rx="3"/>
+            <text x="150" y="225" class="text" text-anchor="middle">UserID: "user789"</text>
+            
+            <rect x="70" y="250" width="160" height="40" class="component" rx="3"/>
+            <text x="150" y="275" class="text" text-anchor="middle">UserID: "user147"</text>
+            
+            <rect x="70" y="300" width="160" height="40" class="component" rx="3"/>
+            <text x="150" y="325" class="text" text-anchor="middle">UserID: "user999"</text>
+
+            <!-- Hash Function -->
+            <rect x="320" y="180" width="160" height="100" class="aws-service" rx="5"/>
+            <text x="400" y="220" class="text" text-anchor="middle" fill="white" font-weight="bold">Hash Function</text>
+            <text x="400" y="240" class="small" text-anchor="middle" fill="white">Consistent Hashing</text>
+            <text x="400" y="260" class="small" text-anchor="middle" fill="white">(MD5-based)</text>
+
+            <!-- Arrows from items to hash -->
+            <path d="M 230 120 L 320 220" class="arrow"/>
+            <path d="M 230 170 L 320 230" class="arrow"/>
+            <path d="M 230 220 L 320 230" class="arrow"/>
+            <path d="M 230 270 L 320 240" class="arrow"/>
+            <path d="M 230 320 L 320 250" class="arrow"/>
+
+            <!-- Partitions -->
+            <rect x="600" y="50" width="350" height="350" fill="#E8F4F8" stroke="#232F3E" stroke-width="2" rx="5"/>
+            <text x="775" y="80" class="title" text-anchor="middle">Partitions (Physical Storage)</text>
+            
+            <!-- Partition 1 -->
+            <rect x="620" y="100" width="300" height="70" fill="#D5F4E6" stroke="#1E8449" stroke-width="2" rx="3"/>
+            <text x="770" y="125" class="text" text-anchor="middle" font-weight="bold">Partition 1 (Hash: 0 - 33%)</text>
+            <text x="630" y="145" class="small">user123, user147</text>
+            <text x="630" y="160" class="small">Items stored on SSD</text>
+            
+            <!-- Partition 2 -->
+            <rect x="620" y="185" width="300" height="70" fill="#FCF3CF" stroke="#B7950B" stroke-width="2" rx="3"/>
+            <text x="770" y="210" class="text" text-anchor="middle" font-weight="bold">Partition 2 (Hash: 34 - 66%)</text>
+            <text x="630" y="230" class="small">user456, user999</text>
+            <text x="630" y="245" class="small">Items stored on SSD</text>
+            
+            <!-- Partition 3 -->
+            <rect x="620" y="270" width="300" height="70" fill="#FADBD8" stroke="#922B21" stroke-width="2" rx="3"/>
+            <text x="770" y="295" class="text" text-anchor="middle" font-weight="bold">Partition 3 (Hash: 67 - 100%)</text>
+            <text x="630" y="315" class="small">user789</text>
+            <text x="630" y="330" class="small">Items stored on SSD</text>
+
+            <!-- Arrows from hash to partitions -->
+            <path d="M 480 210 L 620 125" class="arrow"/>
+            <path d="M 480 230 L 620 220" class="arrow"/>
+            <path d="M 480 250 L 620 305" class="arrow"/>
+
+            <!-- Info Box -->
+            <rect x="50" y="430" width="900" height="60" fill="#FFF5E6" stroke="#FF9900" stroke-width="2" rx="5"/>
+            <text x="70" y="455" class="text" font-weight="bold">Key Points:</text>
+            <text x="70" y="475" class="small">• Hash function ensures even distribution across partitions</text>
+            <text x="500" y="475" class="small">• Each partition handles up to 3000 RCU or 1000 WCU</text>
+        </svg>
+    </div>
+
+</body>
+</html>
