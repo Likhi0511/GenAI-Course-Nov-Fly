@@ -984,7 +984,7 @@ def main():
 
     affordable_electronics = manager.query_items(
         'Products',
-        Key('Category').eq('Electronics') & Key('Price').lt(Decimal('200')),
+        key_condition_expression=Key('Category').eq('Electronics') & Key('Price').lt(Decimal('200')),
         index_name='CategoryPriceIndex'
     )
 
@@ -995,7 +995,7 @@ def main():
 
     in_stock_electronics = manager.query_items(
         'Products',
-        Key('Category').eq('Electronics'),
+        key_condition_expression = Key('Category').eq('Electronics'),
         filter_expression=Attr('InStock').eq(True),
         index_name='CategoryPriceIndex'
     )
