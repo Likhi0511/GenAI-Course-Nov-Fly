@@ -348,7 +348,7 @@ class OpenAIPromptExecutor:
             4. Handle parsing errors in your calling code
 
         Common Use Cases:
-            - Data extraction from unstructured text
+            - Data extraction from 2_unstructured text
             - Structured classification with multiple attributes
             - API responses that feed other systems
             - Agent outputs that trigger downstream actions

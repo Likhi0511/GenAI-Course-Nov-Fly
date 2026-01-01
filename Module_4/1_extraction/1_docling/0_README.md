@@ -1454,7 +1454,7 @@ Day 5-7: Build RAG system
 
 ```bash
 # 1. Install Docling
-pip install docling huggingface-hub pillow
+pip install 1_docling huggingface-hub pillow
 
 # 2. Login to HuggingFace
 huggingface-cli login
@@ -1465,7 +1465,7 @@ python -c "from docling.document_converter import DocumentConverter; print('✓ 
 
 # 4. Extract your first document
 python
->>> from docling.document_converter import DocumentConverter
+>>> from 1_docling.document_converter import DocumentConverter
 >>> converter = DocumentConverter()
 >>> result = converter.convert("your_document.pdf")
 >>> print(result.document.export_to_markdown()[:500])

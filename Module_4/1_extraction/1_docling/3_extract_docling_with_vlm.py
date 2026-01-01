@@ -25,7 +25,7 @@ try:
     from docling_core.types.doc import ImageRefMode, PictureItem, TableItem
 except ImportError as e:
     print(f"❌ Error: {e}")
-    print("Try: pip install --upgrade docling")
+    print("Try: pip install --upgrade 1_docling")
     sys.exit(1)
 
 try:

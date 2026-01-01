@@ -18,7 +18,7 @@ Usage:
     python extract_docling_figures_fixed.py *.pdf
 
 Setup Required:
-    pip install docling "docling[ocr]" huggingface-hub pillow
+    pip install 1_docling "1_docling[ocr]" huggingface-hub pillow
     huggingface-cli login  # One-time authentication
 """
 
@@ -39,7 +39,7 @@ try:
     from docling_core.types.doc import ImageRefMode, PictureItem, TableItem
 except ImportError:
     print("Error: Docling not installed")
-    print("Install with: pip install docling docling[ocr]")
+    print("Install with: pip install 1_docling 1_docling[ocr]")
     sys.exit(1)
 
 # Check HuggingFace
@@ -465,7 +465,7 @@ Features:
   ✓ Metadata extraction
 
 Setup Required:
-  pip install docling docling[ocr] huggingface-hub pillow
+  pip install 1_docling 1_docling[ocr] huggingface-hub pillow
   huggingface-cli login
 
 Based on Official Documentation:

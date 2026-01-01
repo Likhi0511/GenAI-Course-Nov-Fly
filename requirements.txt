@@ -1,3 +1,6 @@
+pdf2image
+llama-parse
+unstructured
 docling-core
 docling
 alembic==1.17.2

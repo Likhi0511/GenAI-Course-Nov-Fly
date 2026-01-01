@@ -10,7 +10,7 @@ The examples in this file demonstrate:
 - Sending a simple question to the AI
 - Performing text classification
 - Generating structured or creative content
-- Extracting structured information from unstructured text
+- Extracting structured information from 2_unstructured text
 - Running the program in an interactive prompt mode
 
 """

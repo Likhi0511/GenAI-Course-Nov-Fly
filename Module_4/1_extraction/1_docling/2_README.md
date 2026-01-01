@@ -299,7 +299,7 @@ Output: Machine-readable text
 
 ```bash
 # 1. Install packages
-pip install docling huggingface-hub pillow
+pip install 1_docling huggingface-hub pillow
 
 # 2. Login to HuggingFace
 huggingface-cli login

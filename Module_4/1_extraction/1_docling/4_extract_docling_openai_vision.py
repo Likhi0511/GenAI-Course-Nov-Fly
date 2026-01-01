@@ -21,7 +21,7 @@ Usage:
     python extract_docling_openai_vision.py *.pdf
 
 Setup Required:
-    pip install docling huggingface-hub pillow openai
+    pip install 1_docling huggingface-hub pillow openai
     export OPENAI_API_KEY="your-key-here"
     huggingface-cli login
 """
@@ -42,15 +42,15 @@ try:
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling_core.types.doc import ImageRefMode, PictureItem, TableItem
 except ImportError as e:
-    print(f"Error: {e}")
-    print("Install with: pip install docling")
+    print(f"❌ Error: {e}")
+    print("Install with: pip install 1_docling")
     sys.exit(1)
 
 # Check HuggingFace
 try:
     from huggingface_hub import whoami
 except ImportError:
-    print("Error: huggingface-hub not installed")
+    print("❌ Error: huggingface-hub not installed")
     print("Install with: pip install huggingface-hub")
     sys.exit(1)
 
@@ -58,7 +58,7 @@ except ImportError:
 try:
     from PIL import Image
 except ImportError:
-    print("Error: Pillow not installed")
+    print("❌ Error: Pillow not installed")
     print("Install with: pip install Pillow")
     sys.exit(1)
 
@@ -66,7 +66,7 @@ except ImportError:
 try:
     from openai import OpenAI
 except ImportError:
-    print("Error: openai not installed")
+    print("❌ Error: openai not installed")
     print("Install with: pip install openai")
     sys.exit(1)
 
@@ -90,7 +90,7 @@ class DoclingOpenAIVisionExtractor:
         self.vision_prompt = vision_prompt
         self.converter = None
         self.openai_client = None
-        
+
         self._check_hf_auth()
         self._check_openai_auth()
         self._initialize_converter()
@@ -102,7 +102,7 @@ class DoclingOpenAIVisionExtractor:
             user_info = whoami()
             print(f"✓ HuggingFace: Logged in as {user_info['name']}")
         except Exception as e:
-            print(f"HuggingFace authentication failed: {e}")
+            print(f"❌ HuggingFace authentication failed: {e}")
             print("\nPlease login: huggingface-cli login")
             sys.exit(1)
 
@@ -110,35 +110,35 @@ class DoclingOpenAIVisionExtractor:
         """Check OpenAI authentication"""
         print("Checking OpenAI authentication...")
         api_key = os.getenv("OPENAI_API_KEY")
-        
+
         if not api_key:
-            print("OPENAI_API_KEY not found")
+            print("❌ OPENAI_API_KEY not found")
             print("\nSet your API key:")
             print("  export OPENAI_API_KEY='your-key-here'")
             print("\nGet API key from: https://platform.openai.com/api-keys")
             sys.exit(1)
-        
+
         try:
             self.openai_client = OpenAI(api_key=api_key)
             # Test with a simple call
             print(f"✓ OpenAI: API key configured")
             print(f"  Model: {self.openai_model}")
         except Exception as e:
-            print(f"OpenAI initialization failed: {e}")
+            print(f"❌ OpenAI initialization failed: {e}")
             sys.exit(1)
 
     def _initialize_converter(self):
         """Initialize Docling converter (without VLM)"""
         print(f"\nInitializing Docling...")
         print(f"  Image scale: {self.image_scale}x (≈{int(72 * self.image_scale)} DPI)")
-        
+
         try:
             pipeline_options = PdfPipelineOptions()
             pipeline_options.images_scale = self.image_scale
             pipeline_options.generate_page_images = True
             pipeline_options.generate_picture_images = True  # KEY: Extract figures
             pipeline_options.do_ocr = True
-            
+
             # NO VLM enabled - we'll use OpenAI instead
             pipeline_options.do_picture_description = False
 
@@ -147,11 +147,11 @@ class DoclingOpenAIVisionExtractor:
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
                 }
             )
-            
+
             print("✓ Docling initialized (figure extraction only)\n")
-            
+
         except Exception as e:
-            print(f"Failed: {e}")
+            print(f"❌ Failed: {e}")
             import traceback
             traceback.print_exc()
             sys.exit(1)
@@ -173,10 +173,10 @@ class DoclingOpenAIVisionExtractor:
         try:
             # Step 1: Extract with Docling (no VLM)
             print("[1/5] Extracting document with Docling...\n")
-            
+
             conv_result = self.converter.convert(str(pdf_path))
             document = conv_result.document
-            
+
             print("✓ Document extracted\n")
 
             # Step 2: Extract text
@@ -197,7 +197,7 @@ class DoclingOpenAIVisionExtractor:
             # Step 5: Generate descriptions with OpenAI Vision
             print("[5/5] Generating figure descriptions with OpenAI Vision...")
             descriptions_stats = self._generate_openai_descriptions(
-                figures_stats['files'], 
+                figures_stats['files'],
                 doc_output_dir
             )
             print(f"✓ Descriptions: {descriptions_stats['count']}\n")
@@ -244,9 +244,16 @@ class DoclingOpenAIVisionExtractor:
     def _extract_text(self, document, output_dir: Path) -> Dict:
         """Extract text as Markdown"""
         markdown_text = document.export_to_markdown()
+
+        # Save original text first (before merging descriptions)
         text_file = output_dir / 'text.md'
         with open(text_file, 'w', encoding='utf-8') as f:
             f.write(markdown_text)
+
+        # Store for later merging with descriptions
+        self._original_text = markdown_text
+        self._text_file = text_file
+
         return {
             'characters': len(markdown_text),
             'words': len(markdown_text.split()),
@@ -292,13 +299,13 @@ class DoclingOpenAIVisionExtractor:
                             figure_filename = figures_dir / f'figure_{figure_counter}.png'
                             with figure_filename.open('wb') as fp:
                                 figure_image.save(fp, 'PNG')
-                            
+
                             figure_files.append(str(figure_filename))
-                            
+
                             # Get caption and page
                             caption = self._get_caption(element, document)
                             page = element.page_no if hasattr(element, 'page_no') else None
-                            
+
                             figure_info_list.append({
                                 'figure_number': figure_counter,
                                 'filename': f'figure_{figure_counter}.png',
@@ -306,11 +313,14 @@ class DoclingOpenAIVisionExtractor:
                                 'page': page,
                                 'caption': caption
                             })
-                            
+
                             print(f"  Saved: figure_{figure_counter}.png (page {page})")
 
                     except Exception as e:
                         print(f"  Warning: Figure {figure_counter} failed: {e}")
+
+            # Store figure info for later merging
+            self._figure_info = figure_info_list
 
             return {
                 'count': len(figure_files),
@@ -324,22 +334,22 @@ class DoclingOpenAIVisionExtractor:
 
     def _generate_openai_descriptions(self, figure_files: List[str], output_dir: Path) -> Dict:
         """Generate descriptions using OpenAI Vision API"""
-        
+
         if not figure_files:
             print("  No figures to describe")
             return {'count': 0}
-        
+
         descriptions = []
         success_count = 0
-        
+
         for i, figure_path in enumerate(figure_files, 1):
             try:
                 print(f"  [{i}/{len(figure_files)}] Describing {Path(figure_path).name}...", end=' ')
-                
+
                 # Read image and encode to base64
                 with open(figure_path, 'rb') as f:
                     image_data = base64.b64encode(f.read()).decode('utf-8')
-                
+
                 # Call OpenAI Vision API
                 response = self.openai_client.chat.completions.create(
                     model=self.openai_model,
@@ -362,9 +372,9 @@ class DoclingOpenAIVisionExtractor:
                     ],
                     max_tokens=500
                 )
-                
+
                 description = response.choices[0].message.content.strip()
-                
+
                 descriptions.append({
                     'figure_number': i,
                     'filename': Path(figure_path).name,
@@ -372,10 +382,10 @@ class DoclingOpenAIVisionExtractor:
                     'description': description,
                     'model': self.openai_model
                 })
-                
+
                 success_count += 1
                 print(f"✓ ({len(description)} chars)")
-                
+
             except Exception as e:
                 print(f"✗ Error: {e}")
                 descriptions.append({
@@ -385,11 +395,11 @@ class DoclingOpenAIVisionExtractor:
                     'description': None,
                     'error': str(e)
                 })
-        
+
         # Save descriptions
         if descriptions:
             self._save_descriptions(descriptions, output_dir)
-        
+
         return {'count': success_count, 'descriptions': descriptions}
 
     def _get_caption(self, picture_element, document) -> Optional[str]:
@@ -407,23 +417,23 @@ class DoclingOpenAIVisionExtractor:
 
     def _save_descriptions(self, descriptions: List[Dict], output_dir: Path):
         """Save descriptions to JSON and Markdown"""
-        
+
         # JSON
         json_file = output_dir / 'figure_descriptions.json'
         with json_file.open('w', encoding='utf-8') as f:
             json.dump(descriptions, f, indent=2, ensure_ascii=False)
-        
-        # Markdown
+
+        # Markdown (standalone)
         md_file = output_dir / 'figure_descriptions.md'
         with md_file.open('w', encoding='utf-8') as f:
             f.write("# Figure Descriptions (OpenAI Vision)\n\n")
             f.write(f"**Model:** {self.openai_model}\n\n")
             f.write("---\n\n")
-            
+
             for desc in descriptions:
                 f.write(f"## Figure {desc['figure_number']}\n\n")
                 f.write(f"**File:** `{desc['filename']}`\n\n")
-                
+
                 if desc.get('description'):
                     f.write(f"**Description:**\n\n{desc['description']}\n\n")
                     f.write(f"*Generated by {desc['model']}*\n\n")
@@ -431,8 +441,142 @@ class DoclingOpenAIVisionExtractor:
                     f.write("*Description generation failed*\n\n")
                     if desc.get('error'):
                         f.write(f"Error: {desc['error']}\n\n")
-                
+
                 f.write("---\n\n")
+
+        # ⭐ MERGE descriptions into text.md for RAG
+        self._merge_descriptions_into_text(descriptions, output_dir)
+
+    def _merge_descriptions_into_text(self, descriptions: List[Dict], output_dir: Path):
+        """
+        Merge figure captions and AI descriptions into text.md for RAG
+
+        Strategy:
+        - Find where figures appear in text (placeholder or reference)
+        - Insert caption + AI description inline
+        - Creates seamless context for RAG
+        """
+        if not descriptions:
+            print("  ⚠ No descriptions to merge")
+            return
+
+        # Read original text
+        text_content = self._original_text
+
+        # Build lookup: figure_number -> (caption, description)
+        figure_data = {}
+        for desc in descriptions:
+            fig_num = desc['figure_number']
+
+            # Get caption from figure_info
+            caption = None
+            if hasattr(self, '_figure_info') and self._figure_info:
+                for fig_info in self._figure_info:
+                    if fig_info['figure_number'] == fig_num:
+                        caption = fig_info.get('caption')
+                        break
+
+            figure_data[fig_num] = {
+                'caption': caption,
+                'description': desc.get('description', '')
+            }
+
+        # Strategy: Replace figure placeholders in text
+        # Docling typically outputs: "<!-- image -->" or similar for figures
+        import re
+
+        # Track if we made any replacements
+        replacements_made = 0
+
+        # Method 1: Try to find explicit figure references
+        for fig_num, data in figure_data.items():
+            caption = data['caption']
+            description = data['description']
+
+            if not description:
+                continue
+
+            # Build the insertion text
+            insertion_parts = []
+            insertion_parts.append(f"\n\n---")
+            insertion_parts.append(f"\n**Figure {fig_num}**")
+
+            if caption:
+                insertion_parts.append(f"\n\n*Caption:* {caption}")
+
+            if description:
+                insertion_parts.append(f"\n\n*AI Description:* {description}")
+
+            insertion_parts.append(f"\n\n---\n\n")
+            insertion = ''.join(insertion_parts)
+
+            # Patterns to find figure references
+            patterns = [
+                # Docling image placeholders
+                r'<!--\s*image\s*-->',
+                r'!\[.*?\]\(.*?figure[_\s-]?' + str(fig_num) + r'.*?\)',
+                # Explicit references
+                f"Figure {fig_num}",
+                f"Fig. {fig_num}",
+                f"figure {fig_num}",
+                f"fig. {fig_num}",
+                # Generic placeholder
+                r'<!-- FigureItem -->'
+            ]
+
+            # Try each pattern
+            replaced = False
+            for pattern in patterns:
+                if re.search(pattern, text_content, re.IGNORECASE):
+                    # Insert after first match
+                    text_content = re.sub(
+                        pattern,
+                        lambda m: m.group(0) + insertion,
+                        text_content,
+                        count=1,
+                        flags=re.IGNORECASE
+                    )
+                    replacements_made += 1
+                    replaced = True
+                    break
+
+            # If no pattern matched, append at end of document
+            if not replaced:
+                text_content += insertion
+                replacements_made += 1
+
+        # Method 2: If no replacements made, append all at end
+        if replacements_made == 0:
+            print("  ⚠ No figure placeholders found in text, appending descriptions at end")
+            text_content += "\n\n# AI-Generated Figure Descriptions\n\n"
+
+            for fig_num, data in sorted(figure_data.items()):
+                caption = data['caption']
+                description = data['description']
+
+                if not description:
+                    continue
+
+                text_content += f"\n## Figure {fig_num}\n\n"
+
+                if caption:
+                    text_content += f"**Caption:** {caption}\n\n"
+
+                text_content += f"**AI Description:** {description}\n\n"
+                text_content += "---\n\n"
+
+        # Save merged text
+        merged_file = output_dir / 'text.md'
+        with merged_file.open('w', encoding='utf-8') as f:
+            f.write(text_content)
+
+        # Save original (without descriptions) for reference
+        original_file = output_dir / 'text_original.md'
+        with original_file.open('w', encoding='utf-8') as f:
+            f.write(self._original_text)
+
+        print(f"  ✓ Added {replacements_made} figure descriptions to text.md")
+        print("  ✓ Original text saved to text_original.md")
 
     def _extract_metadata(self, pdf_path: Path, document, output_dir: Path) -> Dict:
         """Save metadata"""
@@ -456,9 +600,9 @@ class DoclingOpenAIVisionExtractor:
         print(f"{'='*70}")
         print("EXTRACTION COMPLETE - OpenAI Vision")
         print(f"{'='*70}\n")
-        
+
         stats = results['statistics']
-        
+
         print(f"Duration: {results['duration_seconds']:.1f} seconds")
         print(f"Vision Model: {results['vision_model']}")
         print(f"\nText: {stats['text']['characters']:,} characters")
@@ -473,10 +617,10 @@ def main():
     parser.add_argument('pdf_files', nargs='+')
     parser.add_argument('--output-dir', default='extracted_documents_openai')
     parser.add_argument('--image-scale', type=float, default=2.0)
-    parser.add_argument('--model', default='gpt-4o', 
+    parser.add_argument('--model', default='gpt-4o',
                        choices=['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
                        help='OpenAI vision model')
-    parser.add_argument('--prompt', 
+    parser.add_argument('--prompt',
                        default="Describe this technical diagram or chart in detail. Focus on the main components, structure, and purpose.",
                        help='Custom vision prompt')
     args = parser.parse_args()
