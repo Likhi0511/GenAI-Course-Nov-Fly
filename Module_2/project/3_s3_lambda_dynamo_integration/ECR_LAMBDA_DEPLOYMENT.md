@@ -91,7 +91,7 @@ Developer Machine
 
 #### **1.2 Build Docker Image Locally**
 ```bash
-docker build -t csv-parser-lambda:latest .
+docker buildx build --platform linux/amd64 --output type=docker --provenance=false -t csv-parser-lambda:latest --no-cache .
 ```
 
 **What happens inside Docker build:**
@@ -146,7 +146,8 @@ ECR Repository: csv-parser-lambda
 
 #### **1.4 Authenticate Docker to ECR**
 ```bash
-aws ecr get-login-password | docker login --username AWS --password-stdin {ECR_URI}
+export ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URI
 ```
 
 **What happens:**
@@ -159,8 +160,8 @@ aws ecr get-login-password | docker login --username AWS --password-stdin {ECR_U
 
 #### **1.5 Push Image to ECR**
 ```bash
-docker tag csv-parser-lambda:latest {ECR_URI}:latest
-docker push {ECR_URI}:latest
+docker tag csv-parser-lambda:latest $ECR_URI/csv-parser-lambda:latest
+docker push $ECR_URI/csv-parser-lambda:latest
 ```
 
 **What happens during push:**

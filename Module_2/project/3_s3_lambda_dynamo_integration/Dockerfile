@@ -1,25 +1,23 @@
-# Dockerfile for CSV Parser Lambda
-# ==================================
-# Uses AWS Lambda Python 3.11 base image
-# Includes psycopg2 for PostgreSQL connectivity
-
+# Use AWS Lambda Python 3.11 base image
 FROM public.ecr.aws/lambda/python:3.11
 
-# Install system dependencies for psycopg2
-RUN yum install -y \
-    postgresql-devel \
-    gcc \
-    python3-devel \
-    && yum clean all
-
-# Copy requirements file
+# ------------------------------------------------------------------------------
+# Copy requirements and install dependencies
+# ------------------------------------------------------------------------------
 COPY requirements.txt ${LAMBDA_TASK_ROOT}/
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
-# Copy Lambda function code
-COPY lambda_csv_parser.py ${LAMBDA_TASK_ROOT}/
+# ------------------------------------------------------------------------------
+# Copy Lambda handler code
+# ------------------------------------------------------------------------------
+COPY lambda_function.py ${LAMBDA_TASK_ROOT}/
 
-# Set the CMD to your handler
-CMD ["lambda_csv_parser.lambda_handler"]
+# ------------------------------------------------------------------------------
+# IMPORTANT: Ensure handler file is readable by Lambda runtime
+# ------------------------------------------------------------------------------
+RUN chmod 755 ${LAMBDA_TASK_ROOT}/lambda_function.py
+
+# ------------------------------------------------------------------------------
+# Set Lambda entrypoint
+# ------------------------------------------------------------------------------
+CMD ["lambda_function.lambda_handler"]

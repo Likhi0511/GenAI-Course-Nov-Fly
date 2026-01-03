@@ -2,3 +2,4 @@ vendor_id,vendor_name,email,phone,business_name,tax_id,address,city,state,countr
 VEND001,TechGear,contact@techgear.com,+1-555-0101,TechGear Solutions LLC,12-3456701,789 Innovation Drive,San Francisco,CA,USA,94105,active
 VEND002,StyleWear,sales@stylewear.com,+1-555-0202,StyleWear Fashion Inc,12-3456702,456 Fashion Avenue,New York,NY,USA,10001,active
 VEND003,HomeEssentials,info@homeessentials.com,+1-555-0303,HomeEssentials Corp,12-3456703,123 Home Street,Seattle,WA,USA,98101,active
+,,,,,,,,,,,

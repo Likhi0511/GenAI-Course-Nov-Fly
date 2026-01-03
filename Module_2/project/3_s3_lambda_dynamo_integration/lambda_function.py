@@ -3,25 +3,58 @@
 Lambda Function: CSV Parser (Container-based)
 ================================================================================
 
-PURPOSE
--------
-Ingest vendor-uploaded CSV files from S3 and persist each row as a
-pending-validation record in DynamoDB.
+OVERVIEW
+--------
+This Lambda function ingests vendor-uploaded CSV files from Amazon S3 and
+persists each row as a *pending-validation* record in Amazon DynamoDB.
 
+The function performs **ingestion only** — all business validation,
+deduplication, and enrichment are intentionally deferred to downstream
+processors.
+
+This design enables:
+- High ingestion throughput
+- Clear separation of concerns
+- Independent scaling of ingestion vs validation
+- Reliable replay and reconciliation
+
+--------------------------------------------------------------------------------
+TRIGGER
+-------
+S3 ObjectCreated events for vendor-uploaded CSV files.
+
+Expected file naming convention:
+    <VENDOR_ID>_<YYYYMMDD>_<HHMMSS>.csv
+
+--------------------------------------------------------------------------------
 ARCHITECTURE
 ------------
 S3 (CSV Upload)
-    → CSV Parser Lambda (this function)
-        → RDS (vendor validation + upload audit)
+    → CSV Parser Lambda (this module)
+        → RDS (vendor verification + upload audit)
         → DynamoDB (raw product records, status=pending_validation)
-        → CloudWatch Metrics
+        → CloudWatch (metrics + logs)
 
-DESIGN PRINCIPLES
+--------------------------------------------------------------------------------
+DESIGN GUARANTEES
 -----------------
-- Separation of concerns (ingestion ≠ validation)
-- Schema firewall at CSV boundary
-- Idempotent & auditable ingestion
-- Strong observability (logs + metrics + tracebacks)
+✔ Idempotent ingestion (upload_id-based)
+✔ Schema firewall at CSV boundary
+✔ Strong auditability (upload history table)
+✔ Structured, request-scoped logging
+✔ Metrics-driven observability
+
+--------------------------------------------------------------------------------
+NON-GOALS
+---------
+✖ Business validation
+✖ Data enrichment
+✖ Deduplication
+✖ Product approval logic
+
+These are handled downstream by dedicated processors.
+
+================================================================================
 """
 
 # =============================================================================
@@ -48,17 +81,57 @@ from psycopg2.extras import RealDictCursor
 from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
 
 # =============================================================================
-# 3️⃣ LOGGING CONFIGURATION
+# 3️⃣ STRUCTURED LOGGING SETUP (CRITICAL FIX)
 # =============================================================================
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-)
+
+class JsonFormatter(logging.Formatter):
+    """
+    JSON log formatter that correctly serializes `extra` fields.
+
+    This makes logs:
+    - Queryable in CloudWatch Logs Insights
+    - Compatible with OpenTelemetry / Datadog
+    - Safe for Lambda
+    """
+
+    RESERVED_ATTRS = {
+        "args", "asctime", "created", "exc_info", "exc_text",
+        "filename", "funcName", "levelname", "levelno",
+        "lineno", "module", "msecs", "msg", "name",
+        "pathname", "process", "processName",
+        "relativeCreated", "stack_info", "thread", "threadName"
+    }
+
+    def format(self, record):
+        log_record = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        # Attach all custom fields passed via `extra`
+        for key, value in record.__dict__.items():
+            if key not in self.RESERVED_ATTRS:
+                try:
+                    json.dumps(value)  # ensure serializable
+                    log_record[key] = value
+                except Exception:
+                    log_record[key] = str(value)
+
+        return json.dumps(log_record)
+
+
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
 
 logger = logging.getLogger(__name__)
+logger.setLevel(LOG_LEVEL)
+logger.handlers = [handler]
+logger.propagate = False
 
 # =============================================================================
 # 4️⃣ ENVIRONMENT VARIABLES
@@ -69,7 +142,7 @@ RDS_SECRET_NAME = os.environ.get("RDS_SECRET_NAME", "ecommerce/rds/credentials")
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # =============================================================================
-# 5️⃣ AWS CLIENTS (REUSED ACROSS INVOCATIONS)
+# 5️⃣ AWS CLIENTS
 # =============================================================================
 
 s3_client = boto3.client("s3", region_name=REGION)
@@ -81,77 +154,43 @@ secretsmanager = boto3.client("secretsmanager", region_name=REGION)
 # 6️⃣ SECRETS MANAGER CACHE
 # =============================================================================
 
-# Secrets Manager calls are cached per Lambda container to:
-# - reduce latency
-# - reduce API cost
-# - support secret rotation transparently
 cache = SecretCache(
     config=SecretCacheConfig(),
     client=secretsmanager
 )
 
 # =============================================================================
-# 7️⃣ RDS CONNECTION HELPERS
+# 7️⃣ LOG CONTEXT BUILDER
+# =============================================================================
+
+def build_log_context(context=None, upload_id=None, vendor_id=None):
+    """
+    Build a structured logging context attached to every log entry.
+    """
+    return {
+        "request_id": context.aws_request_id if context else None,
+        "function": os.environ.get("AWS_LAMBDA_FUNCTION_NAME"),
+        "upload_id": upload_id,
+        "vendor_id": vendor_id
+    }
+
+# =============================================================================
+# 8️⃣ RDS HELPERS
 # =============================================================================
 
 def get_rds_credentials():
-    """
-    Retrieve PostgreSQL credentials from AWS Secrets Manager.
-
-    Returns
-    -------
-    dict
-        {
-            host,
-            port,
-            dbname,
-            username,
-            password
-        }
-
-    Raises
-    ------
-    ClientError
-        If secret retrieval fails
-    """
     try:
         secret_string = cache.get_secret_string(RDS_SECRET_NAME)
-        secret = json.loads(secret_string)
-
-        # Log safe metadata only (never log secrets)
-        logger.info(
-            "RDS credentials retrieved",
-            extra={"db_host": secret.get("host"), "db_name": secret.get("dbname")}
-        )
-        return secret
-
-    except ClientError as e:
+        return json.loads(secret_string)
+    except ClientError:
         logger.error(
-            "Failed to retrieve RDS credentials",
-            extra={
-                "secret_name": RDS_SECRET_NAME,
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
+            "RDS_SECRET_FETCH_FAILED",
+            extra={"stacktrace": traceback.format_exc()}
         )
         raise
 
 
 def get_db_connection():
-    """
-    Create a new PostgreSQL connection.
-
-    Notes
-    -----
-    - Lambda execution time is short-lived
-    - Connection pooling is intentionally avoided
-    - RDS Proxy can be added later if needed
-
-    Returns
-    -------
-    psycopg2.connection
-        Active database connection
-    """
     creds = get_rds_credentials()
     return psycopg2.connect(
         host=creds["host"],
@@ -163,17 +202,10 @@ def get_db_connection():
     )
 
 # =============================================================================
-# 8️⃣ DATA TYPE CONVERSION HELPERS
+# 9️⃣ TYPE CONVERSION
 # =============================================================================
 
 def convert_to_decimal(value):
-    """
-    Convert numeric input to Decimal (required by DynamoDB).
-
-    Returns
-    -------
-    Decimal | None
-    """
     if value in (None, ""):
         return None
     try:
@@ -183,13 +215,6 @@ def convert_to_decimal(value):
 
 
 def convert_to_int(value):
-    """
-    Convert numeric input to integer safely.
-
-    Returns
-    -------
-    int | None
-    """
     if value in (None, ""):
         return None
     try:
@@ -198,29 +223,10 @@ def convert_to_int(value):
         return None
 
 # =============================================================================
-# 9️⃣ CSV NORMALIZATION (SCHEMA FIREWALL)
+# 🔟 CSV NORMALIZATION
 # =============================================================================
 
 def parse_csv_row(row, row_number):
-    """
-    Normalize a single CSV row into structured product data.
-
-    This function acts as a **schema firewall**:
-    - Raw CSV data never leaks beyond this boundary
-    - CSV format changes are isolated here
-
-    Parameters
-    ----------
-    row : dict
-        Raw CSV row from csv.DictReader
-    row_number : int
-        Line number in the CSV file
-
-    Returns
-    -------
-    dict
-        Normalized product payload
-    """
     return {
         "vendor_product_id": row.get("vendor_product_id", ""),
         "product_name": row.get("product_name", ""),
@@ -240,76 +246,35 @@ def parse_csv_row(row, row_number):
 
 
 def extract_vendor_id_from_filename(filename):
-    """
-    Extract vendor_id from the uploaded filename.
-
-    Expected format:
-    ----------------
-    VENDOR001_YYYYMMDD_HHMMSS.csv
-
-    Returns
-    -------
-    str | None
-    """
     try:
         return filename.split("_")[0]
     except Exception:
         return None
 
 # =============================================================================
-# 🔟 BUSINESS RULES (RDS LOOKUPS)
+# 1️⃣1️⃣ BUSINESS RULES
 # =============================================================================
 
-def verify_vendor_exists(vendor_id):
-    """
-    Validate vendor existence and active status.
-
-    Parameters
-    ----------
-    vendor_id : str
-
-    Returns
-    -------
-    bool
-        True if vendor exists and is active
-    """
+def verify_vendor_exists(vendor_id, log_ctx):
     conn = cursor = None
     try:
-        logger.info("Verifying vendor", extra={"vendor_id": vendor_id})
+        logger.info("VENDOR_VERIFICATION_STARTED", extra=log_ctx)
 
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         cursor.execute(
-            "SELECT vendor_id, status FROM vendors WHERE vendor_id = %s",
+            "SELECT status FROM vendors WHERE vendor_id = %s",
             (vendor_id,)
         )
         vendor = cursor.fetchone()
 
-        if not vendor:
-            logger.warning("Vendor not found", extra={"vendor_id": vendor_id})
+        if not vendor or vendor["status"] != "active":
+            logger.warning("VENDOR_INVALID", extra=log_ctx)
             return False
 
-        if vendor["status"] != "active":
-            logger.warning(
-                "Vendor inactive",
-                extra={"vendor_id": vendor_id, "status": vendor["status"]}
-            )
-            return False
-
-        logger.info("Vendor verified", extra={"vendor_id": vendor_id})
+        logger.info("VENDOR_VERIFIED", extra=log_ctx)
         return True
-
-    except Exception as e:
-        logger.error(
-            "Vendor verification failed",
-            extra={
-                "vendor_id": vendor_id,
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
-        )
-        raise
 
     finally:
         if cursor:
@@ -318,24 +283,13 @@ def verify_vendor_exists(vendor_id):
             conn.close()
 
 # =============================================================================
-# 1️⃣1️⃣ UPLOAD HISTORY (AUDIT TRAIL)
+# 1️⃣2️⃣ UPLOAD HISTORY
 # =============================================================================
 
-def create_upload_history_record(upload_id, vendor_id, file_name, s3_key):
-    """
-    Create an audit record for the current upload.
-
-    This enables:
-    - Retry tracking
-    - Reconciliation
-    - Operational dashboards
-    """
+def create_upload_history_record(upload_id, vendor_id, file_name, s3_key, log_ctx):
     conn = cursor = None
     try:
-        logger.info(
-            "Creating upload history",
-            extra={"upload_id": upload_id, "vendor_id": vendor_id}
-        )
+        logger.info("UPLOAD_HISTORY_CREATE_STARTED", extra=log_ctx)
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -358,17 +312,7 @@ def create_upload_history_record(upload_id, vendor_id, file_name, s3_key):
         ))
 
         conn.commit()
-
-    except Exception as e:
-        logger.error(
-            "Failed to create upload history",
-            extra={
-                "upload_id": upload_id,
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
-        )
-        raise
+        logger.info("UPLOAD_HISTORY_CREATED", extra=log_ctx)
 
     finally:
         if cursor:
@@ -377,15 +321,12 @@ def create_upload_history_record(upload_id, vendor_id, file_name, s3_key):
             conn.close()
 
 
-def update_upload_history_counts(upload_id, total_records):
-    """
-    Update total record count after CSV parsing.
-    """
+def update_upload_history_counts(upload_id, total_records, log_ctx):
     conn = cursor = None
     try:
         logger.info(
-            "Updating upload history counts",
-            extra={"upload_id": upload_id, "total_records": total_records}
+            "UPLOAD_HISTORY_UPDATE_STARTED",
+            extra={**log_ctx, "total_records": total_records}
         )
 
         conn = get_db_connection()
@@ -398,17 +339,7 @@ def update_upload_history_counts(upload_id, total_records):
         """, (total_records, upload_id))
 
         conn.commit()
-
-    except Exception as e:
-        logger.error(
-            "Failed to update upload history",
-            extra={
-                "upload_id": upload_id,
-                "error": str(e),
-                "traceback": traceback.format_exc()
-            }
-        )
-        raise
+        logger.info("UPLOAD_HISTORY_UPDATED", extra=log_ctx)
 
     finally:
         if cursor:
@@ -417,19 +348,17 @@ def update_upload_history_counts(upload_id, total_records):
             conn.close()
 
 # =============================================================================
-# 1️⃣2️⃣ DYNAMODB INGESTION
+# 1️⃣3️⃣ DYNAMODB INGESTION
 # =============================================================================
 
-def batch_insert_dynamodb_records(records):
-    """
-    Insert records into DynamoDB in batches of 25.
-
-    DynamoDB batch_writer handles retries automatically.
-    """
+def batch_insert_dynamodb_records(records, log_ctx):
     table = dynamodb.Table(DYNAMODB_TABLE)
     successful = failed = 0
 
-    logger.info("Starting DynamoDB batch insert", extra={"total": len(records)})
+    logger.info(
+        "DYNAMODB_BATCH_INSERT_STARTED",
+        extra={**log_ctx, "total_records": len(records)}
+    )
 
     for i in range(0, len(records), 25):
         with table.batch_writer() as writer:
@@ -437,28 +366,29 @@ def batch_insert_dynamodb_records(records):
                 try:
                     writer.put_item(Item=record)
                     successful += 1
-                except Exception as e:
+                except Exception:
                     failed += 1
                     logger.error(
-                        "DynamoDB insert failed",
+                        "DYNAMODB_INSERT_FAILED",
                         extra={
-                            "upload_id": record.get("upload_id"),
+                            **log_ctx,
                             "record_id": record.get("record_id"),
-                            "error": str(e),
-                            "traceback": traceback.format_exc()
+                            "stacktrace": traceback.format_exc()
                         }
                     )
+
+    logger.info(
+        "DYNAMODB_BATCH_INSERT_COMPLETED",
+        extra={**log_ctx, "successful": successful, "failed": failed}
+    )
 
     return successful, failed
 
 # =============================================================================
-# 1️⃣3️⃣ CLOUDWATCH METRICS
+# 1️⃣4️⃣ METRICS
 # =============================================================================
 
-def publish_metrics(upload_id, total, success, failed, duration):
-    """
-    Publish ingestion metrics to CloudWatch.
-    """
+def publish_metrics(upload_id, total, success, failed, duration, log_ctx):
     cloudwatch.put_metric_data(
         Namespace="EcommerceProductOnboarding",
         MetricData=[
@@ -468,53 +398,54 @@ def publish_metrics(upload_id, total, success, failed, duration):
         ]
     )
 
+    logger.info("CLOUDWATCH_METRICS_PUBLISHED", extra=log_ctx)
+
 # =============================================================================
-# 1️⃣4️⃣ LAMBDA HANDLER
+# 1️⃣5️⃣ LAMBDA HANDLER
 # =============================================================================
 
 def lambda_handler(event, context):
-    """
-    Lambda entry point.
-
-    Triggered by:
-    - S3 ObjectCreated events for CSV uploads
-    """
     start_time = datetime.utcnow()
+    log_ctx = build_log_context(context)
 
-    logger.info(
-        "CSV ingestion started",
-        extra={"request_id": context.aws_request_id}
-    )
+    logger.info("CSV_INGESTION_STARTED", extra=log_ctx)
 
     try:
-        # Extract S3 event details
         s3_info = event["Records"][0]["s3"]
         bucket = s3_info["bucket"]["name"]
         key = s3_info["object"]["key"]
         filename = key.split("/")[-1]
 
-        # Generate upload identifier
+        vendor_id = extract_vendor_id_from_filename(filename)
         timestamp = filename.replace(".csv", "").split("_", 1)[1]
         upload_id = f"UPLOAD_{timestamp}"
 
-        # Resolve vendor
-        vendor_id = extract_vendor_id_from_filename(filename)
-        if not verify_vendor_exists(vendor_id):
+        log_ctx.update({
+            "upload_id": upload_id,
+            "vendor_id": vendor_id,
+            "s3_bucket": bucket,
+            "s3_key": key,
+            "file_name": filename
+        })
+
+        if not verify_vendor_exists(vendor_id, log_ctx):
             raise ValueError("Vendor validation failed")
 
-        # Create audit record
-        create_upload_history_record(upload_id, vendor_id, filename, key)
+        create_upload_history_record(upload_id, vendor_id, filename, key, log_ctx)
 
-        # Download CSV content
         csv_content = s3_client.get_object(
             Bucket=bucket,
             Key=key
         )["Body"].read().decode("utf-8")
 
-        # Parse CSV rows
         reader = csv.DictReader(io.StringIO(csv_content))
-        records = []
 
+        logger.info(
+            "CSV_SCHEMA_DETECTED",
+            extra={**log_ctx, "columns": reader.fieldnames}
+        )
+
+        records = []
         for i, row in enumerate(reader, 1):
             records.append({
                 "upload_id": upload_id,
@@ -529,24 +460,15 @@ def lambda_handler(event, context):
                 "created_at": datetime.utcnow().isoformat()
             })
 
-        # Persist to DynamoDB
-        success, failed = batch_insert_dynamodb_records(records)
+        success, failed = batch_insert_dynamodb_records(records, log_ctx)
+        update_upload_history_counts(upload_id, len(records), log_ctx)
 
-        # Update audit counts
-        update_upload_history_counts(upload_id, len(records))
-
-        # Publish metrics
         duration = (datetime.utcnow() - start_time).total_seconds()
-        publish_metrics(upload_id, len(records), success, failed, duration)
+        publish_metrics(upload_id, len(records), success, failed, duration, log_ctx)
 
         logger.info(
-            "CSV ingestion completed",
-            extra={
-                "upload_id": upload_id,
-                "success": success,
-                "failed": failed,
-                "duration_sec": duration
-            }
+            "CSV_INGESTION_COMPLETED",
+            extra={**log_ctx, "duration_sec": duration}
         )
 
         return {
@@ -563,10 +485,12 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.critical(
-            "CSV ingestion failed",
+            "CSV_INGESTION_FAILED",
             extra={
+                **log_ctx,
+                "exception_type": type(e).__name__,
                 "error": str(e),
-                "traceback": traceback.format_exc()
+                "stacktrace": traceback.format_exc()
             }
         )
         return {

@@ -338,7 +338,7 @@ Output: "This technical diagram illustrates a transformer
 
 **Step 1: Install packages**
 ```bash
-pip install 1_docling openai huggingface-hub pillow
+pip install 2_docling openai huggingface-hub pillow
 ```
 
 **Step 2: Get OpenAI API key**

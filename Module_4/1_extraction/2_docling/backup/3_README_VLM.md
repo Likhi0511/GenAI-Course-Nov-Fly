@@ -224,7 +224,7 @@ python extract_docling_vlm_fixed.py paper.pdf \
 
 ```bash
 # 1. Install packages
-pip install 1_docling huggingface-hub pillow transformers
+pip install 2_docling huggingface-hub pillow transformers
 
 # 2. Login to HuggingFace
 huggingface-cli login
