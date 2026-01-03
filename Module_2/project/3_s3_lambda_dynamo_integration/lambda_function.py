@@ -195,7 +195,7 @@ def get_db_connection():
     return psycopg2.connect(
         host=creds["host"],
         port=creds.get("port", 5432),
-        database=creds["dbname"],
+        database=creds.get("dbname", "ecommerce_platform"),
         user=creds["username"],
         password=creds["password"],
         connect_timeout=5
