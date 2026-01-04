@@ -1,0 +1,334 @@
+PDF DOCUMENT COMPONENTS - Visual Layout
+========================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          COMPLETE PDF PAGE                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ # HEADER 1 (H1)                                                        ┃
+┃ ━━━━━━━━━━━━━━━━━                                                      ┃
+┃ Level: 1                                                                ┃
+┃ Type: MAJOR_HEADER                                                      ┃
+┃ Breadcrumbs: ["Header 1"]                                               ┃
+┃ Triggers: FLUSH BUFFER                                                  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    │
+    ├─► ╔═══════════════════════════════════════════════════════════════╗
+    │   ║ ## HEADER 2 (H2)                                              ║
+    │   ║ ━━━━━━━━━━━━━━━━                                              ║
+    │   ║ Level: 2                                                       ║
+    │   ║ Type: MAJOR_HEADER                                             ║
+    │   ║ Breadcrumbs: ["Header 1", "Header 2"]                          ║
+    │   ║ Triggers: FLUSH BUFFER                                         ║
+    │   ╚═══════════════════════════════════════════════════════════════╝
+    │       │
+    │       ├─► ┌───────────────────────────────────────────────────────┐
+    │       │   │ ### HEADER 3 (H3)                                     │
+    │       │   │ ━━━━━━━━━━━━━━━━                                      │
+    │       │   │ Level: 3                                               │
+    │       │   │ Type: MINOR_HEADER                                     │
+    │       │   │ Breadcrumbs: ["Header 1", "Header 2", "Header 3"]     │
+    │       │   │ Triggers: UPDATE CONTEXT ONLY (no flush)              │
+    │       │   └───────────────────────────────────────────────────────┘
+    │       │       │
+    │       │       ├─► ┌───────────────────────────────────────────────┐
+    │       │       │   │ PARAGRAPH 1                                   │
+    │       │       │   │ ━━━━━━━━━━━                                   │
+    │       │       │   │ Type: TEXT                                    │
+    │       │       │   │ This is a regular paragraph of text.          │
+    │       │       │   │ It contains sentences and ideas.              │
+    │       │       │   │                                               │
+    │       │       │   │ Action: ACCUMULATE in buffer                  │
+    │       │       │   └───────────────────────────────────────────────┘
+    │       │       │
+    │       │       ├─► ┌───────────────────────────────────────────────┐
+    │       │       │   │ PARAGRAPH 2                                   │
+    │       │       │   │ ━━━━━━━━━━━                                   │
+    │       │       │   │ Type: TEXT                                    │
+    │       │       │   │ Another paragraph continues the topic.        │
+    │       │       │   │                                               │
+    │       │       │   │ Action: CONSOLIDATE with Paragraph 1          │
+    │       │       │   │ Result: Para1 + "\n\n" + Para2                │
+    │       │       │   └───────────────────────────────────────────────┘
+    │       │       │
+    │       │       ├─► ╔═══════════════════════════════════════════════╗
+    │       │       │   ║ BULLET LIST                                   ║
+    │       │       │   ║ ━━━━━━━━━━━                                   ║
+    │       │       │   ║ Type: TEXT (atomic unit)                      ║
+    │       │       │   ║                                               ║
+    │       │       │   ║ - First bullet point                          ║
+    │       │       │   ║ - Second bullet point                         ║
+    │       │       │   ║ - Third bullet point                          ║
+    │       │       │   ║                                               ║
+    │       │       │   ║ Action: Keep ALL items together as ONE chunk  ║
+    │       │       │   ╚═══════════════════════════════════════════════╝
+    │       │       │
+    │       │       ├─► ╔═══════════════════════════════════════════════╗
+    │       │       │   ║ NUMBERED LIST                                 ║
+    │       │       │   ║ ━━━━━━━━━━━━━                                 ║
+    │       │       │   ║ Type: TEXT (atomic unit)                      ║
+    │       │       │   ║                                               ║
+    │       │       │   ║ 1. First numbered item                        ║
+    │       │       │   ║ 2. Second numbered item                       ║
+    │       │       │   ║ 3. Third numbered item                        ║
+    │       │       │   ║                                               ║
+    │       │       │   ║ Action: Keep ALL items together as ONE chunk  ║
+    │       │       │   ╚═══════════════════════════════════════════════╝
+    │       │       │
+    │       │       ├─► ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    │       │       │   ┃ TABLE (PROTECTED BLOCK)                       ┃
+    │       │       │   ┃ ━━━━━━━━━━━━━━━━━━━━━━━                       ┃
+    │       │       │   ┃ Type: TABLE (NEVER SPLIT)                     ┃
+    │       │       │   ┃                                               ┃
+    │       │       │   ┃ | Column A | Column B | Column C |            ┃
+    │       │       │   ┃ |----------|----------|----------|            ┃
+    │       │       │   ┃ | Value 1  | Value 2  | Value 3  |            ┃
+    │       │       │   ┃ | Value 4  | Value 5  | Value 6  |            ┃
+    │       │       │   ┃                                               ┃
+    │       │       │   ┃ **Table 1:** Title/Caption                    ┃
+    │       │       │   ┃ **Table 1 Summary:** Analysis text            ┃
+    │       │       │   ┃                                               ┃
+    │       │       │   ┃ Action: Extract as COMPLETE UNIT              ┃
+    │       │       │   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    │       │       │
+    │       │       ├─► ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    │       │       │   ┃ IMAGE (PROTECTED BLOCK)                       ┃
+    │       │       │   ┃ ━━━━━━━━━━━━━━━━━━━━━━                        ┃
+    │       │       │   ┃ Type: IMAGE (NEVER SPLIT)                     ┃
+    │       │       │   ┃                                               ┃
+    │       │       │   ┃ **Image 1:** Description                      ┃
+    │       │       │   ┃ ![](figures/diagram.png)                      ┃
+    │       │       │   ┃                                               ┃
+    │       │       │   ┃ *AI Description:* The image shows...          ┃
+    │       │       │   ┃                                               ┃
+    │       │       │   ┃ Action: Extract as COMPLETE UNIT              ┃
+    │       │       │   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    │       │       │
+    │       │       └─► ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    │       │           ┃ CODE BLOCK (PROTECTED BLOCK)                  ┃
+    │       │           ┃ ━━━━━━━━━━━━━━━━━━━━━━━━━━                   ┃
+    │       │           ┃ Type: CODE (NEVER SPLIT)                      ┃
+    │       │           ┃                                               ┃
+    │       │           ┃ ```python                                     ┃
+    │       │           ┃ def process_data(df):                         ┃
+    │       │           ┃     df = df.dropna()                          ┃
+    │       │           ┃     return df.sum()                           ┃
+    │       │           ┃ ```                                           ┃
+    │       │           ┃                                               ┃
+    │       │           ┃ Action: Extract as COMPLETE UNIT              ┃
+    │       │           ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+    │       │
+    │       └─► ┌───────────────────────────────────────────────────────────┐
+    │           │ #### HEADER 4 (H4)                                        │
+    │           │ Level: 4, Type: MINOR_HEADER                              │
+    │           │ Breadcrumbs: ["Header 1", "Header 2", "Header 4"]         │
+    │           │ (H3 dropped when H4 appears)                              │
+    │           └───────────────────────────────────────────────────────────┘
+    │
+    └─► ╔═══════════════════════════════════════════════════════════════════╗
+        ║ ## HEADER 2 - Section B                                          ║
+        ║ Breadcrumbs: ["Header 1", "Header 2 - Section B"]                ║
+        ║ (Previous H2 replaced)                                            ║
+        ╚═══════════════════════════════════════════════════════════════════╝
+
+
+═══════════════════════════════════════════════════════════════════════════
+BREADCRUMB HIERARCHY - How Context Flows
+═══════════════════════════════════════════════════════════════════════════
+
+Step 1: # Chapter 1
+        ┌───────────────┐
+        │ Chapter 1     │  ← Level 1
+        └───────────────┘
+
+Step 2: ## Introduction
+        ┌───────────────┐
+        │ Chapter 1     │  ← Level 1
+        ├───────────────┤
+        │ Introduction  │  ← Level 2
+        └───────────────┘
+
+Step 3: ### Background
+        ┌───────────────┐
+        │ Chapter 1     │  ← Level 1
+        ├───────────────┤
+        │ Introduction  │  ← Level 2
+        ├───────────────┤
+        │ Background    │  ← Level 3
+        └───────────────┘
+
+Step 4: #### Details
+        ┌───────────────┐
+        │ Chapter 1     │  ← Level 1
+        ├───────────────┤
+        │ Introduction  │  ← Level 2
+        ├───────────────┤
+        │ Background    │  ← Level 3
+        ├───────────────┤
+        │ Details       │  ← Level 4
+        └───────────────┘
+
+Step 5: ## Methods (New H2)
+        ┌───────────────┐
+        │ Chapter 1     │  ← Level 1
+        ├───────────────┤
+        │ Methods       │  ← Level 2 (REPLACED)
+        └───────────────┘
+        Levels 3, 4 DROPPED
+
+
+═══════════════════════════════════════════════════════════════════════════
+COMPONENT TYPES SUMMARY
+═══════════════════════════════════════════════════════════════════════════
+
+HEADERS:
+  ┏━━━━━━━━━━━━━━━━━━━━┓
+  ┃ # H1               ┃  Major Header → Flush buffer, Update breadcrumbs
+  ┃ ## H2              ┃  Major Header → Flush buffer, Update breadcrumbs
+  ┣━━━━━━━━━━━━━━━━━━━━┫
+  ┃ ### H3             ┃  Minor Header → Update context only
+  ┃ #### H4            ┃  Minor Header → Update context only
+  ┃ ##### H5           ┃  Minor Header → Update context only
+  ┃ ###### H6          ┃  Minor Header → Update context only
+  ┗━━━━━━━━━━━━━━━━━━━━┛
+
+TEXT SECTIONS:
+  ┌────────────────────┐
+  │ Paragraph          │  Consolidate consecutive paragraphs
+  │ Bullet List        │  Keep as atomic unit
+  │ Numbered List      │  Keep as atomic unit
+  └────────────────────┘
+
+PROTECTED BLOCKS (Never Split):
+  ┏━━━━━━━━━━━━━━━━━━━━┓
+  ┃ Table + Summary    ┃  Atomic unit
+  ┃ Image + AI Desc    ┃  Atomic unit
+  ┃ Code Block         ┃  Atomic unit
+  ┗━━━━━━━━━━━━━━━━━━━━┛
+
+METADATA:
+  ┌────────────────────┐
+  │ Breadcrumbs        │  ["H1", "H2", "H3"]
+  │ Page Number        │  1, 2, 3...
+  │ Source File        │  page_001.md
+  │ Type               │  text|image|table|code
+  │ Quality Metrics    │  words, sentences, entities
+  │ Source Attribution │  "Morgan Stanley Research"
+  └────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+CHUNKING FLOW
+═══════════════════════════════════════════════════════════════════════════
+
+Input: page_001.md
+  │
+  ├─► Identify Protected Blocks (tables, images, code)
+  │     └─► Store positions: [(start, end, type, content), ...]
+  │
+  ├─► Parse into Semantic Sections
+  │     ├─► Header → Update breadcrumbs
+  │     ├─► Paragraph → TEXT section
+  │     ├─► List → TEXT section (atomic)
+  │     └─► Protected Block → IMAGE/TABLE/CODE section
+  │
+  ├─► Consolidate Paragraphs
+  │     └─► Merge consecutive TEXT sections
+  │
+  ├─► Accumulate in Buffer
+  │     ├─► Add sections to buffer
+  │     ├─► Track current size
+  │     └─► Flush when:
+  │           • Size >= target_size (1500), OR
+  │           • Hit major header (H1, H2), OR
+  │           • Hit protected block
+  │
+  ├─► Validate Chunks
+  │     ├─► Check required fields
+  │     ├─► Check content not empty
+  │     └─► Add quality metrics
+  │
+  ├─► Deduplicate
+  │     └─► Compare hash with last 5 chunks
+  │
+  └─► Output Chunk
+        └─► Add to chunks list with full metadata
+
+
+═══════════════════════════════════════════════════════════════════════════
+CROSS-PAGE MERGING
+═══════════════════════════════════════════════════════════════════════════
+
+Page 1 Last Chunk          Page 2 First Chunk
+┌──────────────────┐       ┌──────────────────┐
+│ ...text ending   │       │ continuing text  │
+│ with incomplete  │       │ and more...      │
+└──────────────────┘       └──────────────────┘
+        │                          │
+        └──────► DETECT ◄───────────┘
+                   │
+            Signals:
+            • No punctuation at end
+            • Starts with lowercase
+            • List continuation (2., 3.)
+            • Table row (|...|)
+                   │
+                   ▼
+        ┌──────────────────────────┐
+        │ MERGED CHUNK:            │
+        │ ...text ending with      │
+        │ incomplete continuing    │
+        │ text and more...         │
+        └──────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════
+SIZE THRESHOLDS
+═══════════════════════════════════════════════════════════════════════════
+
+        0                800              1500              2500
+        ├─────────────────┼────────────────┼─────────────────┤
+        │                 │                │                 │
+     Too Small      MIN_SIZE          TARGET_SIZE       MAX_SIZE
+        │                 │                │                 │
+        │                 │                │                 │
+    Don't flush     Start considering    Ideal size    Force split
+    until bigger      flushing            for RAG      if exceeded
+
+
+═══════════════════════════════════════════════════════════════════════════
+FINAL OUTPUT STRUCTURE
+═══════════════════════════════════════════════════════════════════════════
+
+{
+  "document": "report.pdf",
+  "total_chunks": 25,
+  "chunks": [
+    {
+      "id": "abc123...",
+      "text": "Context: Chapter 1 > Introduction\n\nActual content...",
+      "content_only": "Actual content...",
+      "metadata": {
+        "source": "page_001.md",
+        "page_number": 1,
+        "type": "text",
+        "breadcrumbs": ["Chapter 1", "Introduction"],
+        "hierarchical_context": {
+          "level_1": "Chapter 1",
+          "level_2": "Introduction",
+          "full_path": "Chapter 1 > Introduction",
+          "depth": 2
+        },
+        "char_count": 1245,
+        "quality_metrics": {
+          "word_count": 187,
+          "has_numerical_data": true,
+          "has_dates": false,
+          "has_entities": true
+        }
+      }
+    },
+    ...more chunks...
+  ]
+}

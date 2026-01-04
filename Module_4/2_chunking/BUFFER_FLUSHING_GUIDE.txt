@@ -1,0 +1,909 @@
+================================================================================
+BUFFER FLUSHING - Complete Visual Guide
+================================================================================
+
+This document explains what "flushing the buffer" means in the semantic 
+chunker and why it's the CORE mechanism that controls chunk creation.
+
+
+================================================================================
+1. WHAT IS A BUFFER?
+================================================================================
+
+Think of the buffer as a TEMPORARY HOLDING AREA for content sections.
+
+ANALOGY 1: Water in a bucket
+─────────────────────────────
+┌──────────────────┐
+│                  │  ← Empty bucket (empty buffer)
+│                  │
+│                  │
+│                  │
+└──────────────────┘
+
+Add water (content):
+┌──────────────────┐
+│                  │
+│                  │
+│                  │
+│░░░░░░░░░░░░░░░░░░│  ← Some water (small buffer)
+└──────────────────┘
+
+Keep adding:
+┌──────────────────┐
+│                  │
+│░░░░░░░░░░░░░░░░░░│
+│░░░░░░░░░░░░░░░░░░│  ← More water (growing buffer)
+│░░░░░░░░░░░░░░░░░░│
+└──────────────────┘
+
+Bucket full - POUR IT OUT (flush!):
+┌──────────────────┐
+│                  │  ← Empty again after flush
+│                  │
+│                  │
+│                  │
+└──────────────────┘
+         │
+         │ Poured water = Created chunk
+         ▼
+    ┌─────────┐
+    │ CHUNK 1 │
+    └─────────┘
+
+
+ANALOGY 2: Shopping cart
+────────────────────────
+Buffer = Shopping cart
+Items = Content sections (paragraphs, lists, etc.)
+Flush = Check out (create chunk from cart contents)
+Empty cart = Start filling again
+
+
+================================================================================
+2. BUFFER STATE VARIABLES
+================================================================================
+
+The chunker maintains these state variables:
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ STATE VARIABLES                                                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  buffer = []                    ← List of content sections              │
+│  buffer_size = 0                ← Current total characters              │
+│  buffer_breadcrumbs = []        ← Context for buffered content          │
+│                                                                          │
+│  Configuration constants:                                               │
+│  target_size = 1500 chars       ← Ideal chunk size                      │
+│  min_size = 800 chars           ← Minimum acceptable size               │
+│  max_size = 2500 chars          ← Maximum size before force flush       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+Example buffer state at different times:
+
+Time T1 (Empty):
+─────────────────
+buffer = []
+buffer_size = 0
+buffer_breadcrumbs = ["Chapter 1", "Introduction"]
+
+Time T2 (After adding paragraph 1):
+────────────────────────────────────
+buffer = [
+    {
+        'content': 'This is the first paragraph. It discusses...',
+        'type': 'text',
+        'breadcrumbs': ['Chapter 1', 'Introduction']
+    }
+]
+buffer_size = 245  (245 characters)
+buffer_breadcrumbs = ["Chapter 1", "Introduction"]
+
+Time T3 (After adding paragraph 2):
+────────────────────────────────────
+buffer = [
+    {
+        'content': 'This is the first paragraph. It discusses...',
+        'type': 'text',
+        'breadcrumbs': ['Chapter 1', 'Introduction']
+    },
+    {
+        'content': 'The second paragraph continues...',
+        'type': 'text',
+        'breadcrumbs': ['Chapter 1', 'Introduction']
+    }
+]
+buffer_size = 512  (245 + 267 = 512 characters)
+buffer_breadcrumbs = ["Chapter 1", "Introduction"]
+
+
+================================================================================
+3. WHEN DOES FLUSHING HAPPEN?
+================================================================================
+
+Three main triggers cause the buffer to flush:
+
+TRIGGER 1: Size threshold reached
+──────────────────────────────────
+
+When: buffer_size >= target_size (1500 chars)
+
+Example:
+┌──────────────────────────────────────────────────────────────┐
+│ Buffer state:                                                │
+│ ─────────────                                                │
+│ Section 1: 456 chars                                         │
+│ Section 2: 389 chars                                         │
+│ Section 3: 512 chars                                         │
+│ Section 4: 234 chars                                         │
+│ ─────────────                                                │
+│ Total: 1591 chars  ← EXCEEDS target_size (1500)            │
+│                                                              │
+│ Action: FLUSH!                                               │
+│ ─────────                                                    │
+│ Create chunk from all 4 sections                            │
+│ Empty buffer                                                 │
+└──────────────────────────────────────────────────────────────┘
+
+Visual timeline:
+0        500      1000     1500     2000
+├─────────┼─────────┼─────────┼─────────┤
+│░░░░░░░░░│░░░░░░░░░│░░░░░░░░░│░        │
+│◄────────────────────────────►│        │
+          BUFFER                  FLUSH!
+
+
+TRIGGER 2: Major header encountered
+────────────────────────────────────
+
+When: See H1 or H2 header (major semantic boundary)
+
+Why? Major headers signal NEW TOPIC, so previous content should be complete.
+
+Example:
+┌──────────────────────────────────────────────────────────────┐
+│ Current buffer:                                              │
+│ ─────────────                                                │
+│ Section 1: "Introduction text..." (400 chars)               │
+│ Section 2: "Background info..." (350 chars)                 │
+│ ─────────────                                                │
+│ Total: 750 chars  ← Below target (1500) BUT...             │
+│                                                              │
+│ Encounter: ## New Section  ← H2 Header!                     │
+│                                                              │
+│ Decision:                                                    │
+│ ─────────                                                    │
+│ Even though buffer < target_size, FLUSH because:            │
+│ • H2 signals major topic change                             │
+│ • Current buffer is complete thought                        │
+│ • Buffer size (750) >= min_size (800)... almost            │
+│                                                              │
+│ Action: FLUSH buffer, create chunk                          │
+│         Then start NEW buffer for "New Section"             │
+└──────────────────────────────────────────────────────────────┘
+
+
+TRIGGER 3: Protected block encountered
+───────────────────────────────────────
+
+When: See table, image, or code block
+
+Why? Protected blocks are atomic - they can't be split. Better to flush
+      current buffer, add protected block as its own chunk, then continue.
+
+Example:
+┌──────────────────────────────────────────────────────────────┐
+│ Current buffer:                                              │
+│ ─────────────                                                │
+│ Section 1: "Analysis shows..." (600 chars)                  │
+│ ─────────────                                                │
+│                                                              │
+│ Encounter: Table with 1200 chars                            │
+│                                                              │
+│ Decision:                                                    │
+│ ─────────                                                    │
+│ Option A: Add table to buffer                               │
+│   → Buffer would be 1800 chars                              │
+│   → Mixed content (text + table)                            │
+│   → Semantically confusing                                  │
+│                                                              │
+│ Option B: Flush buffer first                                │
+│   → Create chunk from text (600 chars)                      │
+│   → Create separate chunk for table                         │
+│   → Clean, semantically pure chunks                         │
+│                                                              │
+│ Action: Choose Option B - FLUSH!                            │
+└──────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. STEP-BY-STEP BUFFER LIFECYCLE
+================================================================================
+
+Let's trace buffer through complete document processing:
+
+DOCUMENT CONTENT:
+─────────────────
+
+# Chapter 1                          ← H1 header
+Introduction to the topic.           ← Paragraph 1 (250 chars)
+This section explains...             ← Paragraph 2 (300 chars)
+
+## Background                        ← H2 header
+Historical context is important.     ← Paragraph 3 (400 chars)
+Several studies have shown...        ← Paragraph 4 (500 chars)
+
+Key findings:                        ← Paragraph 5 (200 chars)
+- Finding 1                          ← List (150 chars)
+- Finding 2
+- Finding 3
+
+| Metric | Value |                  ← Table (800 chars)
+|--------|-------|
+| ROI    | 25%   |
+
+
+PROCESSING TIMELINE:
+────────────────────
+
+STEP 1: Encounter "# Chapter 1"
+────────────────────────────────
+Buffer state BEFORE:
+  buffer = []
+  buffer_size = 0
+  buffer_breadcrumbs = []
+
+Action: Update breadcrumbs, continue (headers not added to buffer)
+
+Buffer state AFTER:
+  buffer = []
+  buffer_size = 0
+  buffer_breadcrumbs = ["Chapter 1"]
+
+
+STEP 2: Encounter Paragraph 1 (250 chars)
+──────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = []
+  buffer_size = 0
+
+Action: ADD to buffer
+
+Buffer state AFTER:
+  buffer = [
+      {'content': 'Introduction to the topic.', 'type': 'text'}
+  ]
+  buffer_size = 250
+  buffer_breadcrumbs = ["Chapter 1"]
+
+Visual:
+0        250      500      750      1000     1500
+├─────────┼─────────┼─────────┼─────────┼─────────┤
+│░░░░░░░░░│         │         │         │         │
+          ▲
+      250 chars
+
+
+STEP 3: Encounter Paragraph 2 (300 chars)
+──────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = [para1]
+  buffer_size = 250
+
+Action: ADD to buffer
+
+Buffer state AFTER:
+  buffer = [para1, para2]
+  buffer_size = 550
+
+Visual:
+0        250      500      750      1000     1500
+├─────────┼─────────┼─────────┼─────────┼─────────┤
+│░░░░░░░░░│░░░░░░░░░│░        │         │         │
+          ▲         ▲
+      250 chars  300 chars
+      
+Total: 550 chars < target (1500), continue accumulating
+
+
+STEP 4: Encounter "## Background" (H2 Header)
+──────────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = [para1, para2]
+  buffer_size = 550
+  buffer_breadcrumbs = ["Chapter 1"]
+
+Check: Is H2 a MAJOR header? YES
+Check: Should we flush? YES
+
+Decision logic:
+┌────────────────────────────────────────────┐
+│ FLUSH DECISION TREE                        │
+├────────────────────────────────────────────┤
+│ Is major header (H1/H2)? YES               │
+│ Is buffer empty? NO                        │
+│ Is buffer >= min_size? NO (550 < 800)      │
+│                                            │
+│ But: This is a major semantic boundary     │
+│ Action: FLUSH anyway (acceptable size)     │
+└────────────────────────────────────────────┘
+
+FLUSH ACTION:
+─────────────
+1. Combine buffer contents:
+   text = "Introduction to the topic.\n\nThis section explains..."
+   
+2. Create chunk:
+   {
+       'id': 'abc123...',
+       'text': 'Context: Chapter 1\n\n' + text,
+       'content_only': text,
+       'metadata': {
+           'source': 'page_001.md',
+           'page_number': 1,
+           'type': 'text',
+           'breadcrumbs': ['Chapter 1'],
+           'char_count': 550
+       }
+   }
+
+3. Add chunk to output list
+
+4. Clear buffer:
+   buffer = []
+   buffer_size = 0
+
+5. Update breadcrumbs for new section:
+   buffer_breadcrumbs = ["Chapter 1", "Background"]
+
+Buffer state AFTER FLUSH:
+  buffer = []  ← EMPTY!
+  buffer_size = 0
+  buffer_breadcrumbs = ["Chapter 1", "Background"]
+
+Output:
+  chunks = [CHUNK_1]  ← First chunk created!
+
+
+STEP 5: Encounter Paragraph 3 (400 chars)
+──────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = []
+  buffer_size = 0
+  buffer_breadcrumbs = ["Chapter 1", "Background"]
+
+Action: ADD to buffer
+
+Buffer state AFTER:
+  buffer = [para3]
+  buffer_size = 400
+
+Visual:
+0        400      800      1200     1500
+├─────────┼─────────┼─────────┼─────────┤
+│░░░░░░░░░│         │         │         │
+          ▲
+     400 chars (new buffer)
+
+
+STEP 6: Encounter Paragraph 4 (500 chars)
+──────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = [para3]
+  buffer_size = 400
+
+Action: ADD to buffer
+
+Buffer state AFTER:
+  buffer = [para3, para4]
+  buffer_size = 900
+
+Visual:
+0        400      800      1200     1500
+├─────────┼─────────┼─────────┼─────────┤
+│░░░░░░░░░│░░░░░░░░░│░        │         │
+          ▲         ▲
+     400 chars  500 chars
+
+Total: 900 chars < target (1500), continue
+
+
+STEP 7: Encounter Paragraph 5 (200 chars)
+──────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = [para3, para4]
+  buffer_size = 900
+
+Action: ADD to buffer
+
+Buffer state AFTER:
+  buffer = [para3, para4, para5]
+  buffer_size = 1100
+
+Visual:
+0        400      800      1100     1500
+├─────────┼─────────┼─────────┼─────────┤
+│░░░░░░░░░│░░░░░░░░░│░░░░     │         │
+
+Total: 1100 chars < target (1500), continue
+
+
+STEP 8: Encounter List (150 chars)
+───────────────────────────────────
+Buffer state BEFORE:
+  buffer = [para3, para4, para5]
+  buffer_size = 1100
+
+Action: ADD to buffer
+
+Buffer state AFTER:
+  buffer = [para3, para4, para5, list]
+  buffer_size = 1250
+
+Visual:
+0        400      800      1100 1250 1500
+├─────────┼─────────┼─────────┼────┼─────┤
+│░░░░░░░░░│░░░░░░░░░│░░░░░░░░ │    │     │
+
+Total: 1250 chars < target (1500), continue
+
+
+STEP 9: Encounter Table (800 chars) - PROTECTED BLOCK
+──────────────────────────────────────────────────────
+Buffer state BEFORE:
+  buffer = [para3, para4, para5, list]
+  buffer_size = 1250
+
+Check: Is this a protected block? YES (table)
+
+Decision:
+┌────────────────────────────────────────────┐
+│ PROTECTED BLOCK DECISION                   │
+├────────────────────────────────────────────┤
+│ Type: TABLE (protected)                    │
+│ Current buffer: 1250 chars                 │
+│                                            │
+│ Option A: Add table to buffer              │
+│   → Total: 1250 + 800 = 2050 chars         │
+│   → Exceeds target (1500)                  │
+│   → Mixed types (text + table)             │
+│                                            │
+│ Option B: Flush buffer first               │
+│   → Chunk 1: Text sections (1250 chars)    │
+│   → Chunk 2: Table alone (800 chars)       │
+│   → Clean separation                       │
+│                                            │
+│ Decision: Option B - FLUSH!                │
+└────────────────────────────────────────────┘
+
+FLUSH ACTION:
+─────────────
+1. Combine buffer:
+   text = "Historical context...\n\nSeveral studies...\n\n
+           Key findings:\n- Finding 1..."
+
+2. Create CHUNK_2:
+   {
+       'text': 'Context: Chapter 1 > Background\n\n' + text,
+       'type': 'text',
+       'char_count': 1250,
+       'breadcrumbs': ['Chapter 1', 'Background']
+   }
+
+3. Clear buffer:
+   buffer = []
+   buffer_size = 0
+
+4. Create CHUNK_3 for table:
+   {
+       'text': 'Context: Chapter 1 > Background\n\n' + table_content,
+       'type': 'table',
+       'char_count': 800,
+       'breadcrumbs': ['Chapter 1', 'Background']
+   }
+
+Buffer state AFTER:
+  buffer = []
+  buffer_size = 0
+  buffer_breadcrumbs = ["Chapter 1", "Background"]
+
+Output:
+  chunks = [CHUNK_1, CHUNK_2, CHUNK_3]
+
+
+FINAL SUMMARY:
+──────────────
+
+Document processing complete!
+
+Created 3 chunks:
+
+CHUNK 1:
+  Source: Chapter 1 (intro paragraphs)
+  Size: 550 chars
+  Triggered by: Major header (H2)
+  
+CHUNK 2:
+  Source: Chapter 1 > Background (paragraphs + list)
+  Size: 1250 chars
+  Triggered by: Protected block (table)
+  
+CHUNK 3:
+  Source: Chapter 1 > Background (table)
+  Size: 800 chars
+  Type: table (protected)
+
+
+================================================================================
+5. FLUSH DECISION LOGIC - Complete Flowchart
+================================================================================
+
+                    ┌─────────────────────┐
+                    │ New content section │
+                    │ encountered         │
+                    └──────────┬──────────┘
+                               │
+                   ┌───────────┴───────────┐
+                   │                       │
+            Is it a header?                │
+                   │                       │
+                  YES                     NO
+                   │                       │
+                   ▼                       ▼
+        ┌──────────────────┐    ┌──────────────────┐
+        │ Is it H1 or H2?  │    │ Is it protected  │
+        │ (Major header)   │    │ block?           │
+        └────┬──────┬──────┘    └────┬──────┬──────┘
+             │      │                 │      │
+            YES    NO                YES    NO
+             │      │                 │      │
+             │      └─────┐           │      │
+             ▼            │           ▼      ▼
+    ┌────────────┐        │    ┌──────────┐  │
+    │Is buffer   │        │    │  FLUSH   │  │
+    │empty?      │        │    │  BUFFER  │  │
+    └──┬────┬────┘        │    └────┬─────┘  │
+       │    │             │         │        │
+      YES  NO             │         │        │
+       │    │             │         │        │
+       │    ▼             │         │        │
+       │ ┌────────┐      │         │        │
+       │ │ FLUSH  │      │         │        │
+       │ │ BUFFER │      │         │        │
+       │ └───┬────┘      │         │        │
+       │     │           │         │        │
+       └─────┴───────────┴─────────┴────────┘
+                         │
+                         ▼
+              ┌──────────────────┐
+              │ Update           │
+              │ breadcrumbs      │
+              │ Continue         │
+              └──────────────────┘
+                         │
+                         ▼
+              ┌──────────────────────────┐
+              │ Add section to buffer?   │
+              └────┬──────────────┬──────┘
+                   │              │
+                Regular       Protected
+                content         block
+                   │              │
+                   ▼              ▼
+         ┌─────────────┐  ┌─────────────┐
+         │ADD to buffer│  │Create chunk │
+         │             │  │immediately  │
+         └──────┬──────┘  └─────────────┘
+                │
+                ▼
+      ┌──────────────────┐
+      │ Check buffer     │
+      │ size             │
+      └────┬──────┬──────┘
+           │      │
+    size >= target  size < target
+           │      │
+           ▼      ▼
+      ┌────────┐  ┌────────┐
+      │ FLUSH  │  │Continue│
+      │ BUFFER │  │ adding │
+      └────────┘  └────────┘
+
+
+================================================================================
+6. COMMON SCENARIOS VISUALIZED
+================================================================================
+
+SCENARIO 1: Perfect size reached
+─────────────────────────────────
+
+Adding sections to buffer:
+
+Section 1: 400 chars
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░│                                                │
+└──────────────────────────────────────────────────────────┘
+0         400                                            1500
+
+Section 2: 500 chars
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░│░░░░░░░░░░░░│                                  │
+└──────────────────────────────────────────────────────────┘
+0         400          900                               1500
+
+Section 3: 650 chars
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░│░░░░░░░░░░░░│░░░░░░░░░░░░░│░                  │
+└──────────────────────────────────────────────────────────┘
+0         400          900           1550               1500
+                                       ▲
+                              Exceeded target!
+                              
+FLUSH! Create chunk with 1550 chars
+
+
+SCENARIO 2: Header interrupts accumulation
+───────────────────────────────────────────
+
+Buffer at 700 chars:
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░░░░░░░│                                          │
+└──────────────────────────────────────────────────────────┘
+0               700                                      1500
+                 ▲
+          Below target but...
+          
+Encounter: ## New Section
+
+Decision: FLUSH because major semantic boundary
+
+Result: Chunk with 700 chars (acceptable, >= min_size)
+
+
+SCENARIO 3: Protected block forces flush
+─────────────────────────────────────────
+
+Buffer at 1100 chars:
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░░░░░░░░░░░░░░░░│                                │
+└──────────────────────────────────────────────────────────┘
+0                       1100                              1500
+
+Encounter: Table (900 chars)
+
+If we add table:
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░░░░░░░░░░░░░░░░│▓▓▓▓▓▓▓▓▓▓▓▓▓▓│               │
+└──────────────────────────────────────────────────────────┘
+0                       1100            2000              2500
+                                         ▲
+                               Exceeds target, mixed types
+
+Better: FLUSH first
+┌──────────────────────────────────────────────────────────┐
+│░░░░░░░░░░░░░░░░░░░░░░░░░│ → CHUNK 1                      │
+└──────────────────────────────────────────────────────────┘
+0                       1100
+
+┌──────────────────────────────────────────────────────────┐
+│▓▓▓▓▓▓▓▓▓▓▓▓▓▓│ → CHUNK 2 (table alone)                   │
+└──────────────────────────────────────────────────────────┘
+0             900
+
+
+================================================================================
+7. WHY FLUSHING MATTERS FOR RAG
+================================================================================
+
+Without proper flushing (naive character-based splitting):
+───────────────────────────────────────────────────────────
+
+Bad chunk 1:
+"...the system architecture consists of three components:
+1. Frontend
+2. Backend
+3. Databa"  ← Cut mid-word!
+
+Bad chunk 2:
+"se layer
+
+| Component | Role |
+|-----------|---"  ← Table split!
+
+Bad chunk 3:
+"---|
+| Frontend | UI |
+| Backend | API |
+
+The table shows..."  ← Context separated!
+
+
+With semantic flushing:
+────────────────────────
+
+Good chunk 1:
+"...the system architecture consists of three components:
+1. Frontend
+2. Backend  
+3. Database layer"  ← Complete list
+
+Good chunk 2:
+"| Component | Role |
+|-----------|------|
+| Frontend  | UI   |
+| Backend   | API  |
+
+**Table 1 Summary:** The table shows component
+responsibilities..."  ← Complete table with context
+
+Good chunk 3:
+"Based on the architecture above, we can
+see that..."  ← New topic, complete thought
+
+
+RAG Results Comparison:
+───────────────────────
+
+Query: "What are the system components?"
+
+Bad chunking retrieves:
+  - "...ree components: 1. Frontend 2. Backend 3. Databa"
+  - Incomplete answer, confusing
+
+Good chunking retrieves:
+  - Complete list with all 3 components
+  - Clear, actionable answer
+
+
+================================================================================
+8. BUFFER SIZE THRESHOLDS VISUALIZED
+================================================================================
+
+Size spectrum:
+
+0        800            1500            2500         3000
+├─────────┼───────────────┼───────────────┼───────────┼─────┤
+│         │               │               │           │     │
+│   TOO   │   OK BUT      │    IDEAL      │  OK BUT   │ TOO │
+│  SMALL  │    SMALL      │    SIZE       │   LARGE   │LARGE│
+│         │               │               │           │     │
+│  Don't  │ Acceptable if │  Target for  │Force split│ERROR│
+│  flush  │ semantic      │  most chunks │if regular │     │
+│         │ boundary      │              │content    │     │
+│         │               │              │           │     │
+└─────────┴───────────────┴───────────────┴───────────┴─────┘
+          ▲               ▲               ▲
+       MIN_SIZE      TARGET_SIZE      MAX_SIZE
+
+
+Examples:
+
+Size: 500 chars
+  Decision: Don't flush unless forced by major header
+  Reason: Too small for good semantic chunk
+
+Size: 850 chars
+  Decision: Flush if major header encountered
+  Reason: Acceptable size at semantic boundary
+
+Size: 1450 chars
+  Decision: Continue adding if possible
+  Reason: Close to target, may reach ideal with next section
+
+Size: 1550 chars  
+  Decision: Flush now
+  Reason: Exceeded target, good stopping point
+
+Size: 2400 chars
+  Decision: Must flush before adding more
+  Reason: Approaching max_size
+
+Size: 2800 chars (protected block)
+  Decision: Allow (protected blocks are atomic)
+  Warning: Log that block exceeds max_size
+
+
+================================================================================
+9. PSEUDO-CODE WITH FLUSH LOGIC
+================================================================================
+
+```python
+def process_sections(sections):
+    buffer = []
+    buffer_size = 0
+    chunks = []
+    
+    for section in sections:
+        # DECISION POINT 1: Should we flush before adding?
+        should_flush = (
+            # Size threshold
+            buffer_size >= target_size
+            or
+            # Major header encountered (and buffer not empty)
+            (section.is_major_header() and buffer)
+            or
+            # Protected block encountered (and buffer not empty)
+            (section.is_protected() and buffer)
+        )
+        
+        if should_flush:
+            # FLUSH: Create chunk from buffer
+            chunk = create_chunk_from_buffer(buffer)
+            chunks.append(chunk)
+            
+            # Clear buffer
+            buffer = []
+            buffer_size = 0
+        
+        # DECISION POINT 2: How to handle current section?
+        if section.is_header():
+            # Headers update context but don't go in buffer
+            update_breadcrumbs(section)
+            
+        elif section.is_protected():
+            # Protected blocks become immediate chunks
+            chunk = create_chunk_from_section(section)
+            chunks.append(chunk)
+            
+        else:
+            # Regular content: add to buffer
+            buffer.append(section)
+            buffer_size += len(section.content)
+    
+    # FINAL FLUSH: Handle remaining buffer
+    if buffer:
+        chunk = create_chunk_from_buffer(buffer)
+        chunks.append(chunk)
+    
+    return chunks
+```
+
+
+================================================================================
+10. SUMMARY - Key Takeaways
+================================================================================
+
+WHAT IS BUFFER FLUSHING?
+────────────────────────
+Converting accumulated sections in the buffer into a complete chunk,
+then clearing the buffer to start fresh.
+
+WHY FLUSH?
+──────────
+1. Size management: Keep chunks within target size
+2. Semantic boundaries: Respect document structure
+3. Content purity: Don't mix incompatible types
+4. RAG quality: Create retrievable, complete units
+
+WHEN TO FLUSH?
+──────────────
+1. Buffer size >= target_size (1500 chars)
+2. Major header encountered (H1, H2)
+3. Protected block encountered (table, image, code)
+4. End of document
+
+WHAT HAPPENS DURING FLUSH?
+──────────────────────────
+1. Combine all buffer contents
+2. Add hierarchical context (breadcrumbs)
+3. Generate metadata (type, size, quality metrics)
+4. Create chunk object
+5. Add to chunks list
+6. Clear buffer (empty it)
+7. Ready for next accumulation
+
+WHY IT MATTERS?
+───────────────
+Good flushing = Semantic chunks = Better RAG retrieval = Better LLM answers
+
+Bad flushing = Random chunks = Poor retrieval = Confused LLM
+
+
+================================================================================
+END OF BUFFER FLUSHING GUIDE
+================================================================================
+
+Use this guide to understand the core mechanism that controls chunk creation
+in the semantic chunker. Flushing is the "heartbeat" of the chunking process!

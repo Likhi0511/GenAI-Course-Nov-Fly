@@ -1,0 +1,957 @@
+================================================================================
+CROSS-PAGE CONTINUATION - Complete Visual Guide
+================================================================================
+
+This document explains how the chunker detects and handles content that
+continues across page boundaries, preventing broken chunks at page breaks.
+
+
+================================================================================
+1. THE PROBLEM - Why Cross-Page Continuations Matter
+================================================================================
+
+SCENARIO: PDF Extraction Problem
+─────────────────────────────────
+
+When PDFs are extracted to markdown, page boundaries become artificial breaks
+in what was originally continuous content.
+
+PDF Original (continuous):
+┌─────────────────────────────────────────────────────────────┐
+│ Page 5                                                       │
+│ ...                                                          │
+│ The analysis reveals three key components:                  │
+│ storage, processing, and                                    │ ← Page break here!
+├─────────────────────────────────────────────────────────────┤
+│ Page 6                                                       │
+│ delivery. Each component plays a critical role...           │
+│ ...                                                          │
+└─────────────────────────────────────────────────────────────┘
+
+After Extraction to Markdown:
+┌─────────────────────────────────────────────────────────────┐
+│ page_005.md                                                  │
+│ The analysis reveals three key components:                  │
+│ storage, processing, and                                    │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ page_006.md                                                  │
+│ delivery. Each component plays a critical role...           │
+└─────────────────────────────────────────────────────────────┘
+
+WITHOUT CONTINUATION HANDLING:
+─────────────────────────────────
+
+Chunk from page 5:
+┌─────────────────────────────────────────────────────────────┐
+│ The analysis reveals three key components:                  │
+│ storage, processing, and                                    │ ← Incomplete!
+└─────────────────────────────────────────────────────────────┘
+
+Chunk from page 6:
+┌─────────────────────────────────────────────────────────────┐
+│ delivery. Each component plays a critical role...           │ ← Missing context!
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+❌ First chunk ends mid-sentence (incomplete)
+❌ Second chunk starts mid-word (no context)
+❌ RAG retrieval gets confused
+❌ LLM can't understand either chunk properly
+
+WITH CONTINUATION HANDLING:
+───────────────────────────
+
+Merged chunk:
+┌─────────────────────────────────────────────────────────────┐
+│ The analysis reveals three key components:                  │
+│ storage, processing, and delivery. Each component plays     │
+│ a critical role...                                          │ ← Complete!
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+✓ Complete sentence
+✓ Full context
+✓ Clear retrieval
+✓ LLM understands perfectly
+
+
+================================================================================
+2. CONTINUATION DETECTION - All Patterns
+================================================================================
+
+The _detect_page_continuation() function checks for 5 types of continuations:
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONTINUATION TYPE 1: INCOMPLETE SENTENCE                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ Pattern: Text ends WITHOUT terminal punctuation                         │
+│ Detection: Last 100 chars don't contain: . ! ? " ' ) ]                 │
+│                                                                         │
+│ EXAMPLE 1: Mid-sentence break                                           │
+│ ───────────────────────────                                             │
+│ Page 5 ends: "The system architecture relies on"                       │
+│                                                         ▲               │
+│                                              No punctuation!            │
+│                                                                         │
+│ Page 6 starts: "three core components for processing."                 │
+│                                                                         │
+│ Detection Result: INCOMPLETE_SENTENCE                                   │
+│                                                                         │
+│ EXAMPLE 2: Clause break                                                │
+│ ────────────────────                                                    │
+│ Page 5 ends: "The report discusses metrics including"                  │
+│                                                         ▲               │
+│                                              No punctuation!            │
+│                                                                         │
+│ Page 6 starts: "revenue, costs, and profitability."                    │
+│                                                                         │
+│ Detection Result: INCOMPLETE_SENTENCE                                   │
+│                                                                         │
+│ EXAMPLE 3: Complete sentence (NO continuation)                         │
+│ ──────────────────────────────────────────                              │
+│ Page 5 ends: "The analysis is complete."                               │
+│                                           ▲                             │
+│                                   Period found!                         │
+│                                                                         │
+│ Page 6 starts: "Next, we examine the results."                         │
+│                                                                         │
+│ Detection Result: NONE (clean break)                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONTINUATION TYPE 2: NUMBERED LIST                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ Pattern: Page ends with list, next page continues numbering            │
+│ Detection: Last chunk is list AND next chunk starts with list item     │
+│                                                                         │
+│ EXAMPLE 1: Simple numbered list                                        │
+│ ────────────────────────────────                                        │
+│ Page 5 ends:                                                            │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ Key findings:                                         │              │
+│ │ 1. Revenue increased 25%                              │              │
+│ │ 2. Costs decreased 10%                                │              │
+│ └───────────────────────────────────────────────────────┘              │
+│                                                                         │
+│ Page 6 starts:                                                          │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ 3. Profit margins improved                            │ ← Continues! │
+│ │ 4. Market share grew                                  │              │
+│ └───────────────────────────────────────────────────────┘              │
+│                                                                         │
+│ Detection Process:                                                      │
+│ 1. Last chunk type is 'text'                                           │
+│ 2. Last chunk contains numbered list pattern ^\d+\.                    │
+│ 3. Next chunk starts with numbered list pattern                        │
+│ 4. Result: NUMBERED_LIST_CONTINUATION                                   │
+│                                                                         │
+│ EXAMPLE 2: NOT a continuation (new list)                               │
+│ ────────────────────────────────────────                                │
+│ Page 5 ends:                                                            │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ 1. First point                                        │              │
+│ │ 2. Second point                                       │              │
+│ │                                                       │              │
+│ │ Conclusion: The list is complete.                    │ ← Period!    │
+│ └───────────────────────────────────────────────────────┘              │
+│                                                                         │
+│ Page 6 starts:                                                          │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ # New Section                                         │ ← New topic  │
+│ │ 1. Different list starts                              │              │
+│ └───────────────────────────────────────────────────────┘              │
+│                                                                         │
+│ Detection Result: NONE (clean break - sentence ends with period)       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONTINUATION TYPE 3: BULLET LIST                                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ Pattern: Similar to numbered list but with bullet markers               │
+│ Detection: Last chunk is list AND next chunk starts with bullet        │
+│                                                                         │
+│ EXAMPLE:                                                                │
+│ Page 5 ends:                                                            │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ Key benefits:                                         │              │
+│ │ - Faster processing                                   │              │
+│ │ - Lower costs                                         │              │
+│ └───────────────────────────────────────────────────────┘              │
+│                                                                         │
+│ Page 6 starts:                                                          │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ - Better scalability                                  │ ← Continues! │
+│ │ - Improved reliability                                │              │
+│ └───────────────────────────────────────────────────────┘              │
+│                                                                         │
+│ Detection Process:                                                      │
+│ 1. Last chunk contains bullet pattern ^[-*+]                           │
+│ 2. Next chunk starts with bullet pattern                               │
+│ 3. Result: BULLET_LIST_CONTINUATION                                     │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONTINUATION TYPE 4: TABLE ROW                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ Pattern: Table spans across pages                                       │
+│ Detection: Last chunk ends with | AND next chunk starts with |         │
+│                                                                         │
+│ EXAMPLE:                                                                │
+│ Page 5 ends:                                                            │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ | Metric    | Q1   | Q2   |                           │              │
+│ │ |-----------|------|------|                           │              │
+│ │ | Revenue   | 100M | 120M |                           │              │
+│ └───────────────────────────────────────────────────────┘              │
+│                                            ▲                             │
+│                                    Ends with |                          │
+│                                                                         │
+│ Page 6 starts:                                                          │
+│ ┌───────────────────────────────────────────────────────┐              │
+│ │ | Costs     | 80M  | 85M  |                           │ ← Continues! │
+│ │ | Profit    | 20M  | 35M  |                           │              │
+│ └───────────────────────────────────────────────────────┘              │
+│  ▲                                                                      │
+│ Starts with |                                                           │
+│                                                                         │
+│ Detection Process:                                                      │
+│ 1. Last chunk content ends with pipe |                                 │
+│ 2. Next chunk content starts with pipe |                               │
+│ 3. Result: TABLE_CONTINUATION                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONTINUATION TYPE 5: LOWERCASE START                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ Pattern: Next page starts with lowercase (mid-word break)              │
+│ Detection: First character is lowercase letter                          │
+│                                                                         │
+│ EXAMPLE:                                                                │
+│ Page 5 ends: "The comprehensive anal"                                  │
+│                                    ▲                                     │
+│                            Cut mid-word!                                │
+│                                                                         │
+│ Page 6 starts: "ysis demonstrates significant results."                │
+│                 ▲                                                       │
+│          Lowercase start!                                               │
+│                                                                         │
+│ Detection Process:                                                      │
+│ 1. Get first character of next page                                    │
+│ 2. Check: char.islower()                                               │
+│ 3. Result: LOWERCASE_START                                              │
+│                                                                         │
+│ NOTE: This catches worst-case scenarios where text is cut mid-word     │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+3. DETECTION ALGORITHM - Step by Step
+================================================================================
+
+FUNCTION: _detect_page_continuation(last_chunk, next_chunk)
+
+INPUT:
+──────
+last_chunk = {
+    'content': 'The system architecture relies on',
+    'type': 'text',
+    'breadcrumbs': ['Chapter 1', 'Architecture']
+}
+
+next_chunk = {
+    'content': 'three core components for processing.',
+    'type': 'text',
+    'breadcrumbs': ['Chapter 1', 'Architecture']
+}
+
+
+STEP 1: Safety Checks
+─────────────────────
+
+Check if inputs are valid:
+
+if not last_chunk or not next_chunk:
+    return None
+
+Both chunks exist? YES → Continue
+
+
+STEP 2: Extract Content
+───────────────────────
+
+last_content = last_chunk.get('content', '')
+next_content = next_chunk.get('content', '')
+
+last_content = "The system architecture relies on"
+next_content = "three core components for processing."
+
+
+STEP 3: Get Last 100 Characters
+────────────────────────────────
+
+last_100 = last_content[-100:].strip()
+
+Result: "The system architecture relies on" (entire text, < 100 chars)
+
+
+STEP 4: Check Terminal Punctuation
+───────────────────────────────────
+
+terminal_punctuation = {'.', '!', '?', '"', "'", ')', ']'}
+
+Check: Does last_100 contain any of these?
+
+"The system architecture relies on"
+   . ? NO
+   ! ? NO
+   ? ? NO
+   " ? NO
+   ' ? NO
+   ) ? NO
+   ] ? NO
+
+Result: NO terminal punctuation found
+
+
+STEP 5: Decision - INCOMPLETE SENTENCE
+───────────────────────────────────────
+
+No terminal punctuation → Likely incomplete sentence
+
+Return: {
+    'type': 'incomplete_sentence',
+    'last_text': 'The system architecture relies on',
+    'next_text': 'three core components for processing.',
+    'confidence': 'high'
+}
+
+
+ALTERNATIVE FLOW 1: Complete Sentence
+──────────────────────────────────────
+
+If last_content was: "The analysis is complete."
+                                                 ▲
+                                          Period found!
+
+STEP 4 would find period → No continuation
+
+
+ALTERNATIVE FLOW 2: Numbered List
+──────────────────────────────────
+
+If last_content ends with:
+"1. First point
+2. Second point"
+
+And next_content starts with:
+"3. Third point"
+
+Detection:
+1. Check last_content for numbered list pattern: ^\d+\. → YES
+2. Check next_content for numbered list pattern: ^\d+\. → YES
+3. Return: {'type': 'numbered_list_continuation', ...}
+
+
+ALTERNATIVE FLOW 3: Table
+──────────────────────────
+
+If last_content ends with: "| Value |"
+                                     ▲
+                               Ends with |
+
+And next_content starts with: "| Next |"
+                               ▲
+                         Starts with |
+
+Detection:
+1. Check last_content.rstrip().endswith('|') → YES
+2. Check next_content.lstrip().startswith('|') → YES
+3. Return: {'type': 'table_continuation', ...}
+
+
+================================================================================
+4. MERGING ALGORITHM - Step by Step
+================================================================================
+
+FUNCTION: _merge_continued_pages(all_chunks, continuation_signal)
+
+INPUT:
+──────
+all_chunks = [
+    # Page 5 chunks
+    [
+        {'content': 'Para 1...', 'metadata': {'page_number': 5}},
+        {'content': 'The system relies on', 'metadata': {'page_number': 5}}
+    ],
+    # Page 6 chunks
+    [
+        {'content': 'three core components.', 'metadata': {'page_number': 6}},
+        {'content': 'Para 2...', 'metadata': {'page_number': 6}}
+    ]
+]
+
+continuation_signal = {
+    'type': 'incomplete_sentence',
+    'last_text': 'The system relies on',
+    'next_text': 'three core components.'
+}
+
+
+STEP 1: Identify Chunks to Merge
+─────────────────────────────────
+
+page_5_chunks = all_chunks[0]
+page_6_chunks = all_chunks[1]
+
+last_chunk_page5 = page_5_chunks[-1]  # Last chunk from page 5
+first_chunk_page6 = page_6_chunks[0]  # First chunk from page 6
+
+Visual:
+┌─────────────────────────┐ ┌─────────────────────────┐
+│ Page 5 Chunks           │ │ Page 6 Chunks           │
+├─────────────────────────┤ ├─────────────────────────┤
+│ Chunk 1: Para 1         │ │ Chunk 3: three core...  │ ← Merge with
+│ Chunk 2: The system... │ ← │ Chunk 4: Para 2         │
+└─────────────────────────┘ └─────────────────────────┘
+         THIS                        THIS
+
+
+STEP 2: Combine Content
+───────────────────────
+
+Based on continuation type:
+
+For INCOMPLETE_SENTENCE:
+  merged_content = last_chunk + " " + first_chunk
+  
+Result:
+"The system relies on three core components."
+                     ▲
+              Space added for natural flow
+
+
+For NUMBERED_LIST:
+  merged_content = last_chunk + "\n" + first_chunk
+
+Result:
+"1. First
+2. Second
+3. Third"
+
+
+For TABLE:
+  merged_content = last_chunk + "\n" + first_chunk
+
+Result:
+"| Col1 | Col2 |
+| Val1 | Val2 |"
+
+
+STEP 3: Create Merged Chunk
+────────────────────────────
+
+merged_chunk = {
+    'id': generate_new_hash(merged_content),
+    'text': merged_content,
+    'content_only': merged_content,
+    'metadata': {
+        'source': last_chunk['metadata']['source'],
+        'page_number': last_chunk['metadata']['page_number'],
+        'type': last_chunk['metadata']['type'],
+        'breadcrumbs': last_chunk['metadata']['breadcrumbs'],
+        'is_merged': True,  ← Flag indicating cross-page merge
+        'merged_from_pages': [5, 6],  ← Track source pages
+        'char_count': len(merged_content),
+        'quality_metrics': recalculate_metrics(merged_content)
+    }
+}
+
+
+STEP 4: Update Chunk Lists
+───────────────────────────
+
+Before:
+all_chunks = [
+    [chunk1_p5, chunk2_p5],  # Page 5
+    [chunk3_p6, chunk4_p6]   # Page 6
+]
+
+Remove last chunk from page 5:
+all_chunks[0].pop()  # Remove chunk2_p5
+
+Remove first chunk from page 6:
+all_chunks[1].pop(0)  # Remove chunk3_p6
+
+Add merged chunk to page 5:
+all_chunks[0].append(merged_chunk)
+
+After:
+all_chunks = [
+    [chunk1_p5, merged_chunk],  # Page 5 (merged added here)
+    [chunk4_p6]                 # Page 6
+]
+
+
+STEP 5: Update Statistics
+──────────────────────────
+
+Track merging activity:
+stats = {
+    'cross_page_merges': 1,
+    'continuation_types': {
+        'incomplete_sentence': 1
+    }
+}
+
+
+================================================================================
+5. COMPLETE EXAMPLE - Real Document Processing
+================================================================================
+
+DOCUMENT: 3-page technical report
+
+PAGE 1 CONTENT:
+┌─────────────────────────────────────────────────────────────┐
+│ # System Architecture                                        │
+│                                                              │
+│ The distributed system consists of multiple layers.         │
+│ Each layer provides specific functionality:                 │
+└─────────────────────────────────────────────────────────────┘
+
+PAGE 2 CONTENT:
+┌─────────────────────────────────────────────────────────────┐
+│ - Presentation layer                                         │
+│ - Business logic layer                                       │
+│ - Data access layer                                          │
+│                                                              │
+│ Performance metrics are shown in Table                      │ ← Incomplete!
+└─────────────────────────────────────────────────────────────┘
+
+PAGE 3 CONTENT:
+┌─────────────────────────────────────────────────────────────┐
+│ 1 below.                                                     │ ← Continuation!
+│                                                              │
+│ | Layer       | Latency |                                   │
+│ |-------------|---------|                                   │
+│ | Presentation| 10ms    |                                   │
+└─────────────────────────────────────────────────────────────┘
+
+
+PROCESSING STEP-BY-STEP:
+─────────────────────────
+
+STEP 1: Process Page 1
+───────────────────────
+
+Chunks created:
+1. Header: "# System Architecture"
+2. Text: "The distributed system consists of multiple layers. Each layer..."
+
+Page 1 complete.
+
+
+STEP 2: Process Page 2
+───────────────────────
+
+Chunks created:
+3. List: "- Presentation layer\n- Business logic layer\n- Data access layer"
+4. Text: "Performance metrics are shown in Table"
+
+Check continuation between Page 1 and Page 2:
+  Last chunk page 1: "...Each layer provides specific functionality:"
+                                                                     ▲
+                                                            Has colon (terminal-ish)
+  
+  First chunk page 2: "- Presentation layer..."
+  
+  Detection: BULLET_LIST_CONTINUATION (list starts after colon)
+  
+  Action: MERGE
+    Merged: "Each layer provides specific functionality:\n- Presentation layer..."
+
+
+STEP 3: Detect Continuation Page 2 → Page 3
+────────────────────────────────────────────
+
+Last chunk page 2: "Performance metrics are shown in Table"
+                                                           ▲
+                                                   No punctuation!
+
+First chunk page 3: "1 below."
+
+Detection:
+  Check terminal punctuation in "Table" → NONE
+  Result: INCOMPLETE_SENTENCE
+
+Continuation signal: {
+    'type': 'incomplete_sentence',
+    'last_text': 'Performance metrics are shown in Table',
+    'next_text': '1 below.',
+    'confidence': 'high'
+}
+
+
+STEP 4: Process Page 3
+───────────────────────
+
+Chunks created:
+5. Text: "1 below."
+6. Table: "| Layer | Latency |\n|-----|-----|\n| Presentation | 10ms |"
+
+
+STEP 5: Merge Page 2 Last + Page 3 First
+─────────────────────────────────────────
+
+Merge:
+  "Performance metrics are shown in Table" + " " + "1 below."
+  
+Result:
+  "Performance metrics are shown in Table 1 below."
+
+Updated chunks:
+4. (merged): "Performance metrics are shown in Table 1 below."
+5. Table: "| Layer | Latency |..."
+
+
+FINAL OUTPUT:
+─────────────
+
+Chunks:
+1. Text: "The distributed system consists of multiple layers. Each layer 
+          provides specific functionality:\n- Presentation layer\n- Business 
+          logic layer\n- Data access layer"
+          
+2. Text (merged): "Performance metrics are shown in Table 1 below."
+   metadata.is_merged: True
+   metadata.merged_from_pages: [2, 3]
+
+3. Table: "| Layer | Latency |\n|-----|-----|\n| Presentation | 10ms |"
+
+
+BENEFITS:
+─────────
+
+✓ Complete sentences across pages
+✓ List properly connected to introduction
+✓ Table reference makes sense
+✓ All chunks are coherent and complete
+
+
+================================================================================
+6. EDGE CASES AND SOLUTIONS
+================================================================================
+
+EDGE CASE 1: False Positive - Abbreviation
+───────────────────────────────────────────
+
+Page 5 ends: "The CEO is Mr"
+                            ▲
+                     No period!
+
+Page 6 starts: "Smith led the initiative."
+
+Problem: "Mr" looks incomplete but it's an abbreviation
+
+Detection: INCOMPLETE_SENTENCE (false positive)
+
+Merge result: "The CEO is Mr Smith led the initiative."
+                             ▲
+                    Should be period here!
+
+Solution: This is rare and acceptable
+  - Most abbreviations have periods (Mr., Dr., etc.)
+  - Trade-off: Better to over-merge than under-merge
+  - User can review merged chunks
+
+
+EDGE CASE 2: Header at Page Start
+──────────────────────────────────
+
+Page 5 ends: "The analysis continues"
+                                    ▲
+                            No punctuation
+
+Page 6 starts: "## New Section\nText here..."
+
+Problem: Incomplete sentence detected, but next chunk is a header
+
+Detection: INCOMPLETE_SENTENCE
+
+Merge attempt: Combine text with header?
+
+Solution: Header detection BLOCKS merge
+  - Headers are semantic boundaries
+  - Never merge content into headers
+  - Accept incomplete sentence before header
+
+
+EDGE CASE 3: Multiple Continuation Types
+─────────────────────────────────────────
+
+Page 5 ends: "Items include"
+                          ▲
+                  No punctuation
+
+Page 6 starts: "1. First item"
+               ▲
+        Numbered list AND lowercase would both trigger
+
+Problem: Multiple signals present
+
+Solution: Priority order
+  1. Numbered list (most specific)
+  2. Bullet list
+  3. Table
+  4. Lowercase start
+  5. Incomplete sentence (most general)
+
+Use highest priority match.
+
+
+EDGE CASE 4: Empty or Whitespace-Only Content
+──────────────────────────────────────────────
+
+Page 5 ends: "Content here."
+
+Page 6 starts: "\n\n\n"  (only whitespace)
+
+Detection: Would check whitespace for punctuation
+
+Solution: Strip whitespace before checking
+  - If stripped content is empty, no continuation
+  - Prevents merging into blank pages
+
+
+EDGE CASE 5: Very Short Content
+────────────────────────────────
+
+Page 5 ends: "A"
+
+Page 6 starts: "B"
+
+Problem: Single characters, no context
+
+Detection: Check for lowercase ('a' vs 'A')
+  - 'A' → Uppercase, no continuation
+  - 'a' → Lowercase, likely continuation
+
+Solution: Use lowercase detection as backup
+
+
+================================================================================
+7. INTEGRATION WITH CHUNKING FLOW
+================================================================================
+
+Where continuation detection fits in the pipeline:
+
+┌─────────────────────────────────────────────────────────────┐
+│ MAIN PROCESSING FLOW                                        │
+└─────────────────────────────────────────────────────────────┘
+
+1. Load metadata.json
+2. Initialize all_chunks = []
+
+3. FOR EACH page:
+   │
+   ├─► Process page → page_chunks
+   │   
+   ├─► Add page_chunks to all_chunks
+   │   
+   └─► IF not first page:
+       │
+       ├─► Get last chunk from previous page
+       │   
+       ├─► Get first chunk from current page
+       │   
+       ├─► DETECT CONTINUATION ◄─────────── HERE!
+       │   │
+       │   ├─► If continuation found:
+       │   │   │
+       │   │   └─► MERGE CHUNKS ◄─────────── HERE!
+       │   │
+       │   └─► If no continuation:
+       │       │
+       │       └─► Continue normally
+
+4. Calculate statistics
+5. Save output
+
+
+CODE STRUCTURE:
+───────────────
+
+```python
+def process(self):
+    all_chunks = []
+    
+    for page_idx, page_meta in enumerate(pages):
+        # Process current page
+        page_chunks = self._chunk_page(page_meta)
+        
+        # Check for continuation from previous page
+        if page_idx > 0 and self.enable_merging:
+            last_chunk_prev = all_chunks[-1][-1] if all_chunks[-1] else None
+            first_chunk_curr = page_chunks[0] if page_chunks else None
+            
+            # DETECT
+            continuation = self._detect_page_continuation(
+                last_chunk_prev, 
+                first_chunk_curr
+            )
+            
+            # MERGE if needed
+            if continuation:
+                self._merge_continued_pages(
+                    all_chunks,
+                    page_chunks,
+                    continuation
+                )
+        
+        all_chunks.append(page_chunks)
+    
+    return all_chunks
+```
+
+
+================================================================================
+8. PERFORMANCE CONSIDERATIONS
+================================================================================
+
+Time Complexity:
+────────────────
+
+Detection: O(1)
+  - Check last 100 chars
+  - Check first 100 chars
+  - Pattern matching
+  - All constant time operations
+
+Merging: O(1)
+  - String concatenation
+  - Array operations (pop, append)
+  - Constant time for typical chunk sizes
+
+Overall: O(n) where n = number of pages
+  - One detection per page boundary
+  - Linear scaling with document size
+
+
+Memory Usage:
+─────────────
+
+Detection: O(1)
+  - Only examines small portions of chunks
+  - No additional data structures
+
+Merging: O(1)
+  - Creates one new merged chunk
+  - Removes two original chunks
+  - Net change: -1 chunk
+
+
+Optimization:
+─────────────
+
+Early Exit: If last chunk ends with period, skip detailed checks
+Cache: Store continuation signal to avoid re-detection
+
+
+================================================================================
+9. STATISTICS AND MONITORING
+================================================================================
+
+What to track:
+──────────────
+
+1. Total cross-page merges performed
+2. Continuation types breakdown:
+   - Incomplete sentences: 12
+   - Numbered lists: 3
+   - Bullet lists: 2
+   - Tables: 1
+   - Lowercase starts: 0
+
+3. Pages affected:
+   - Page 2 → 3: incomplete_sentence
+   - Page 5 → 6: numbered_list
+   - Page 8 → 9: table
+
+4. Merge success rate:
+   - Detected: 18
+   - Merged: 18
+   - Skipped (header boundary): 0
+
+
+Example output:
+───────────────
+
+Cross-Page Merges: 18
+Continuation Types:
+  incomplete_sentence: 12 (67%)
+  numbered_list: 3 (17%)
+  bullet_list: 2 (11%)
+  table: 1 (5%)
+
+
+================================================================================
+10. SUMMARY - Quick Reference
+================================================================================
+
+DETECTION PRIORITIES:
+─────────────────────
+1. Numbered list continuation (most specific)
+2. Bullet list continuation
+3. Table continuation
+4. Lowercase start (mid-word break)
+5. Incomplete sentence (no terminal punctuation)
+
+
+WHEN TO MERGE:
+──────────────
+✓ Incomplete sentences
+✓ List continuations
+✓ Table continuations
+✓ Mid-word breaks
+✗ Complete sentences
+✗ Headers at boundary
+✗ Empty/whitespace content
+
+
+KEY BENEFITS:
+─────────────
+✓ Prevents broken chunks at page boundaries
+✓ Maintains semantic coherence
+✓ Improves RAG retrieval quality
+✓ Preserves document structure
+
+
+EDGE CASES HANDLED:
+───────────────────
+✓ Abbreviations (acceptable over-merge)
+✓ Headers at boundaries (blocks merge)
+✓ Multiple signals (priority order)
+✓ Empty content (skips merge)
+✓ Very short content (uses lowercase detection)
+
+
+INTEGRATION:
+────────────
+- Called between page processing
+- Operates on last chunk of page N and first chunk of page N+1
+- Updates all_chunks in place
+- Tracks statistics for monitoring
+
+
+================================================================================
+END OF CROSS-PAGE CONTINUATION GUIDE
+================================================================================
+
+Use this guide to understand how the chunker handles page boundaries
+intelligently, preventing broken chunks and maintaining document coherence.

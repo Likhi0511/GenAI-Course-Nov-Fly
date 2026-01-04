@@ -1,0 +1,610 @@
+================================================================================
+PRODUCTION SEMANTIC CHUNKER - Complete Documentation Index
+================================================================================
+
+This document provides a complete overview of ALL functions in chunk_production.py,
+their importance, current documentation status, and recommendations for learning.
+
+
+================================================================================
+PART 1: CRITICAL FUNCTIONS - Visual Guides Created ✓
+================================================================================
+
+These are the CORE functions that students must understand deeply.
+Each has a comprehensive visual guide for learning.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1. Buffer Flushing Mechanism                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _flush_semantic_buffer()                                      │
+│ Location: Line 2296                                                     │
+│ Guide: BUFFER_FLUSHING_GUIDE.txt ✓                                     │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Converts buffer contents into complete chunk                          │
+│ • Decides when to create chunks                                         │
+│ • Manages chunk size thresholds                                         │
+│                                                                         │
+│ WHY CRITICAL:                                                           │
+│ • THE CORE mechanism controlling chunk creation                         │
+│ • Determines chunk boundaries and quality                               │
+│ • Direct impact on RAG retrieval performance                            │
+│                                                                         │
+│ COMPLEXITY: ★★★★★ (Highest)                                            │
+│ VISUAL GUIDE: 10 sections, 800+ lines                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 2. Protected Block Identification & Merging                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _identify_protected_blocks()                                  │
+│ Location: Line 1547                                                     │
+│ Guide: BLOCK_MERGING_VISUAL_GUIDE.txt ✓                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Finds tables, images, code blocks in text                             │
+│ • Merges overlapping pattern matches                                    │
+│ • Prevents splitting of atomic content                                  │
+│                                                                         │
+│ WHY CRITICAL:                                                           │
+│ • Preserves semantic integrity of structured content                    │
+│ • Complex regex patterns for multiple PDF extractors                    │
+│ • Sophisticated overlap resolution algorithm                            │
+│                                                                         │
+│ COMPLEXITY: ★★★★★ (Highest)                                            │
+│ VISUAL GUIDE: 8 sections, 600+ lines                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 3. Smart Text Splitting                                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _smart_split()                                                │
+│ Location: Line 2331                                                     │
+│ Guide: SMART_SPLIT_GUIDE.txt ✓                                         │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Splits oversized text at natural boundaries                           │
+│ • Priority: paragraph > sentence > clause > word                        │
+│ • Ensures readable, coherent chunks                                     │
+│                                                                         │
+│ WHY CRITICAL:                                                           │
+│ • Safety net for oversized content                                      │
+│ • Maintains readability and context                                     │
+│ • Direct impact on chunk quality                                        │
+│                                                                         │
+│ COMPLEXITY: ★★★★☆                                                      │
+│ VISUAL GUIDE: 10 sections, 700+ lines                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 4. Document Component Layout                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Functions: _parse_semantic_sections() + _consolidate_paragraphs()      │
+│ Location: Lines 606, 1342                                               │
+│ Guide: PDF_COMPONENTS_LAYOUT.txt ✓                                     │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Parses markdown into semantic sections                                │
+│ • Identifies headers, lists, paragraphs                                 │
+│ • Consolidates related paragraphs                                       │
+│ • Manages breadcrumb hierarchy                                          │
+│                                                                         │
+│ WHY CRITICAL:                                                           │
+│ • Foundation of semantic understanding                                  │
+│ • Converts flat text to structured sections                             │
+│ • Enables intelligent grouping decisions                                │
+│                                                                         │
+│ COMPLEXITY: ★★★★★ (Highest)                                            │
+│ VISUAL GUIDE: 10 sections showing all components                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+PART 2: IMPORTANT FUNCTIONS - Need Visual Guides (Recommended)
+================================================================================
+
+These functions are important for complete understanding.
+I recommend creating detailed visual guides for these.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 5. Cross-Page Continuation Detection                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _detect_page_continuation()                                  │
+│ Location: Line 2940                                                     │
+│ Current Docs: Inline comments (good)                                    │
+│ Recommended: CREATE VISUAL GUIDE                                        │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Detects incomplete sentences at page boundaries                       │
+│ • Identifies list continuation patterns                                 │
+│ • Checks for table row delimiters                                       │
+│ • Returns continuation signals                                          │
+│                                                                         │
+│ WHY IMPORTANT:                                                          │
+│ • Prevents broken chunks at page boundaries                             │
+│ • Complex pattern matching logic                                        │
+│ • Multiple edge cases to handle                                         │
+│                                                                         │
+│ COMPLEXITY: ★★★★☆                                                      │
+│ RECOMMENDED GUIDE SECTIONS:                                             │
+│ • Visual examples of each continuation type                             │
+│ • Decision tree for continuation detection                              │
+│ • Edge case handling (false positives/negatives)                        │
+│ • Integration with merge process                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 6. Cross-Page Merging                                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _merge_continued_pages()                                     │
+│ Location: Line 3015                                                     │
+│ Current Docs: Inline comments (good)                                    │
+│ Recommended: CREATE VISUAL GUIDE                                        │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Takes continuation signals from detection                             │
+│ • Merges last chunk of page N with first chunk of page N+1             │
+│ • Handles different continuation types                                  │
+│ • Updates metadata for merged chunks                                    │
+│                                                                         │
+│ WHY IMPORTANT:                                                          │
+│ • Completes the cross-page boundary resolution                          │
+│ • Complex state management across pages                                 │
+│ • Multiple merge scenarios to handle                                    │
+│                                                                         │
+│ COMPLEXITY: ★★★★☆                                                      │
+│ RECOMMENDED GUIDE SECTIONS:                                             │
+│ • Before/after examples for each continuation type                      │
+│ • Metadata update process                                               │
+│ • State tracking across pages                                           │
+│ • Integration with overall chunking flow                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 7. Chunk Creation with Context                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _create_chunk()                                               │
+│ Location: Line 2846                                                     │
+│ Current Docs: Inline comments (good)                                    │
+│ Recommended: CREATE VISUAL GUIDE                                        │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Builds final chunk structure                                          │
+│ • Adds hierarchical context from breadcrumbs                            │
+│ • Generates quality metrics                                             │
+│ • Extracts metadata (citations, dates, entities)                        │
+│                                                                         │
+│ WHY IMPORTANT:                                                          │
+│ • Creates the actual output data structure                              │
+│ • Quality metrics impact RAG effectiveness                              │
+│ • Context injection improves retrieval                                  │
+│                                                                         │
+│ COMPLEXITY: ★★★☆☆                                                      │
+│ RECOMMENDED GUIDE SECTIONS:                                             │
+│ • Chunk structure diagram (all fields explained)                        │
+│ • Context injection examples (before/after)                             │
+│ • Quality metrics calculation process                                   │
+│ • Metadata extraction patterns                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 8. Chunk Validation                                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _validate_chunk()                                             │
+│ Location: Line 2355                                                     │
+│ Current Docs: Extensive inline comments (excellent)                     │
+│ Recommended: OPTIONAL VISUAL GUIDE                                      │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Checks required fields exist                                          │
+│ • Validates data completeness                                           │
+│ • Enforces quality thresholds                                           │
+│ • Logs validation failures                                              │
+│                                                                         │
+│ WHY IMPORTANT:                                                          │
+│ • Quality assurance gate                                                │
+│ • Prevents malformed chunks                                             │
+│ • Debugging aid for issues                                              │
+│                                                                         │
+│ COMPLEXITY: ★★☆☆☆                                                      │
+│ RECOMMENDED GUIDE SECTIONS:                                             │
+│ • Validation checklist with examples                                    │
+│ • Common failure modes                                                  │
+│ • How to debug validation errors                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 9. Deduplication                                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _add_chunk_with_dedup()                                      │
+│ Location: Line 2649                                                     │
+│ Current Docs: Extensive inline comments (excellent)                     │
+│ Recommended: OPTIONAL VISUAL GUIDE                                      │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Generates MD5 hash for chunk content                                  │
+│ • Compares with last 5 chunks                                           │
+│ • Skips duplicates                                                      │
+│ • Tracks deduplication statistics                                       │
+│                                                                         │
+│ WHY IMPORTANT:                                                          │
+│ • Prevents duplicate chunks from overlapping patterns                   │
+│ • Performance optimization (O(1) check)                                 │
+│ • Hash collision probability explanation                                │
+│                                                                         │
+│ COMPLEXITY: ★★★☆☆                                                      │
+│ RECOMMENDED GUIDE SECTIONS:                                             │
+│ • Why duplicates occur (visual examples)                                │
+│ • Hash-based deduplication diagram                                      │
+│ • Why only check last 5 chunks                                          │
+│ • Hash collision probability math                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+PART 3: UTILITY FUNCTIONS - Well-Documented in Code
+================================================================================
+
+These functions are straightforward and already have excellent inline docs.
+Visual guides are NOT necessary - code comments are sufficient.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 10. Hierarchical Context Builder                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _build_hierarchical_context()                                │
+│ Location: Line 2915                                                     │
+│ Current Docs: Clear inline comments ✓                                  │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ Converts breadcrumbs list to hierarchical structure                     │
+│ Input:  ["Chapter 1", "Section A", "Part 1"]                           │
+│ Output: {                                                               │
+│   "level_1": "Chapter 1",                                               │
+│   "level_2": "Section A",                                               │
+│   "level_3": "Part 1",                                                  │
+│   "full_path": "Chapter 1 > Section A > Part 1",                       │
+│   "depth": 3                                                            │
+│ }                                                                       │
+│                                                                         │
+│ COMPLEXITY: ★☆☆☆☆ (Simple)                                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 11. Block Position Retrieval                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _get_block_at_position()                                     │
+│ Location: Line 2285                                                     │
+│ Current Docs: Clear inline comments ✓                                  │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ Given a cursor position, find if there's a protected block there        │
+│ Returns: (start, end, type, content) or None                           │
+│                                                                         │
+│ COMPLEXITY: ★☆☆☆☆ (Simple lookup)                                     │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 12. Statistics Calculator                                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _calculate_chunk_statistics()                                │
+│ Location: Line 3066                                                     │
+│ Current Docs: Clear inline comments ✓                                  │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ • Calculates size distribution (min, max, median, percentiles)          │
+│ • Content analysis (words, numerical data, dates, etc.)                 │
+│ • Type distribution (text, table, image, code)                          │
+│                                                                         │
+│ COMPLEXITY: ★★☆☆☆ (Straightforward aggregation)                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 13. Output Saver                                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _save_output()                                                │
+│ Location: Line 3149                                                     │
+│ Current Docs: Clear inline comments ✓                                  │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ Writes chunks and statistics to JSON file                               │
+│                                                                         │
+│ COMPLEXITY: ★☆☆☆☆ (Simple I/O)                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+PART 4: ORCHESTRATION FUNCTIONS - Well-Documented in Code
+================================================================================
+
+These are high-level coordination functions with clear flow.
+Code comments and existing docs are sufficient.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 14. Main Process Orchestrator                                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: process()                                                     │
+│ Location: Line 411                                                      │
+│ Current Docs: Excellent flow documentation ✓                           │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ Main entry point that orchestrates entire chunking process:             │
+│ 1. Load metadata                                                        │
+│ 2. Process each page                                                    │
+│ 3. Merge cross-page continuations                                       │
+│ 4. Calculate statistics                                                 │
+│ 5. Save output                                                          │
+│                                                                         │
+│ COMPLEXITY: ★★☆☆☆ (Clear sequential flow)                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 15. Page-Level Chunker                                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _chunk_page()                                                 │
+│ Location: Line 498                                                      │
+│ Current Docs: Good flow documentation ✓                                │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ Processes single page through chunking pipeline:                        │
+│ 1. Load page markdown                                                   │
+│ 2. Identify protected blocks                                            │
+│ 3. Parse semantic sections                                              │
+│ 4. Consolidate paragraphs                                               │
+│ 5. Flush buffer into chunks                                             │
+│                                                                         │
+│ COMPLEXITY: ★★★☆☆ (Coordinates other functions)                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 16. Logging Setup                                                      │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Function: _setup_logging()                                              │
+│ Location: Line 370                                                      │
+│ Current Docs: Clear configuration ✓                                    │
+│ Recommendation: Code comments sufficient                                │
+│                                                                         │
+│ WHAT IT DOES:                                                           │
+│ Configures dual logging (file + console) with verbosity control         │
+│                                                                         │
+│ COMPLEXITY: ★☆☆☆☆ (Standard logging setup)                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+PART 5: RECOMMENDED LEARNING PATH
+================================================================================
+
+For students to master the chunker, follow this learning sequence:
+
+PHASE 1: Foundation (Start Here)
+─────────────────────────────────
+1. Read: PDF_COMPONENTS_LAYOUT.txt
+   → Understand what components exist in documents
+   → Learn the component hierarchy
+   → See breadcrumb evolution
+
+2. Read: BUFFER_FLUSHING_GUIDE.txt
+   → Understand the core chunking mechanism
+   → Learn when chunks are created
+   → See complete buffer lifecycle
+
+3. Experiment: Run chunker with --verbose flag
+   → Watch buffer fill and flush in real-time
+   → Observe decision making
+   → Correlate with documentation
+
+
+PHASE 2: Advanced Mechanisms
+─────────────────────────────
+4. Read: BLOCK_MERGING_VISUAL_GUIDE.txt
+   → Understand pattern overlaps
+   → Learn merge algorithm
+   → See all merge scenarios
+
+5. Read: SMART_SPLIT_GUIDE.txt
+   → Understand oversized content handling
+   → Learn priority hierarchy
+   → See split decisions
+
+6. Experiment: Test with large documents
+   → Observe protected block merging
+   → Watch smart splitting in action
+   → Check output quality
+
+
+PHASE 3: Deep Dive (Optional)
+──────────────────────────────
+7. Study inline code comments for:
+   → _detect_page_continuation()
+   → _merge_continued_pages()
+   → _create_chunk()
+   → _validate_chunk()
+   → _add_chunk_with_dedup()
+
+8. Modify and extend:
+   → Add new protected block patterns
+   → Implement custom split priorities
+   → Create custom quality metrics
+   → Build specialized chunkers
+
+
+PHASE 4: Production Use
+───────────────────────
+9. Integration:
+   → Integrate with RAG pipeline
+   → Connect to vector database
+   → Tune parameters for your use case
+
+10. Optimization:
+    → Profile performance
+    → Adjust thresholds
+    → Add domain-specific patterns
+
+
+================================================================================
+PART 6: QUICK REFERENCE - Function Importance Matrix
+================================================================================
+
+┌──────────────────────────────┬──────────┬─────────────┬──────────────────┐
+│ Function                     │Complexity│ Importance  │ Guide Status     │
+├──────────────────────────────┼──────────┼─────────────┼──────────────────┤
+│ _flush_semantic_buffer       │ ★★★★★   │ CRITICAL    │ ✓ Complete       │
+│ _identify_protected_blocks   │ ★★★★★   │ CRITICAL    │ ✓ Complete       │
+│ _smart_split                 │ ★★★★☆   │ CRITICAL    │ ✓ Complete       │
+│ _parse_semantic_sections     │ ★★★★★   │ CRITICAL    │ ✓ Complete       │
+│ _consolidate_paragraphs      │ ★★★☆☆   │ CRITICAL    │ ✓ Complete       │
+├──────────────────────────────┼──────────┼─────────────┼──────────────────┤
+│ _detect_page_continuation    │ ★★★★☆   │ IMPORTANT   │ ○ Recommended    │
+│ _merge_continued_pages       │ ★★★★☆   │ IMPORTANT   │ ○ Recommended    │
+│ _create_chunk                │ ★★★☆☆   │ IMPORTANT   │ ○ Recommended    │
+│ _validate_chunk              │ ★★☆☆☆   │ IMPORTANT   │ ○ Optional       │
+│ _add_chunk_with_dedup        │ ★★★☆☆   │ IMPORTANT   │ ○ Optional       │
+├──────────────────────────────┼──────────┼─────────────┼──────────────────┤
+│ _build_hierarchical_context  │ ★☆☆☆☆   │ UTILITY     │ - Code comments  │
+│ _get_block_at_position       │ ★☆☆☆☆   │ UTILITY     │ - Code comments  │
+│ _calculate_chunk_statistics  │ ★★☆☆☆   │ UTILITY     │ - Code comments  │
+│ _save_output                 │ ★☆☆☆☆   │ UTILITY     │ - Code comments  │
+│ process                      │ ★★☆☆☆   │ ORCHESTRATE │ - Code comments  │
+│ _chunk_page                  │ ★★★☆☆   │ ORCHESTRATE │ - Code comments  │
+│ _setup_logging               │ ★☆☆☆☆   │ SETUP       │ - Code comments  │
+└──────────────────────────────┴──────────┴─────────────┴──────────────────┘
+
+Legend:
+  ✓ = Complete visual guide exists
+  ○ = Visual guide recommended
+  - = Code comments sufficient
+
+
+================================================================================
+PART 7: DOCUMENTATION CREATION RECOMMENDATION
+================================================================================
+
+YES, you should create comprehensive visual guides for these functions:
+────────────────────────────────────────────────────────────────────────
+
+Priority 1 (High Impact):
+1. ✓ _flush_semantic_buffer (DONE - BUFFER_FLUSHING_GUIDE.txt)
+2. ✓ _identify_protected_blocks (DONE - BLOCK_MERGING_VISUAL_GUIDE.txt)
+3. ✓ _smart_split (DONE - SMART_SPLIT_GUIDE.txt)
+4. ✓ _parse_semantic_sections (DONE - PDF_COMPONENTS_LAYOUT.txt)
+5. ✓ _consolidate_paragraphs (DONE - PDF_COMPONENTS_LAYOUT.txt)
+
+Priority 2 (Good to Have):
+6. ○ _detect_page_continuation (Creates CROSS_PAGE_DETECTION_GUIDE.txt)
+7. ○ _merge_continued_pages (Adds to CROSS_PAGE_DETECTION_GUIDE.txt)
+8. ○ _create_chunk (Creates CHUNK_CREATION_GUIDE.txt)
+
+Priority 3 (Optional):
+9. ○ _validate_chunk (Adds to CHUNK_CREATION_GUIDE.txt)
+10. ○ _add_chunk_with_dedup (Creates DEDUPLICATION_GUIDE.txt)
+
+NO, you should NOT create visual guides for these (code comments sufficient):
+─────────────────────────────────────────────────────────────────────────────
+
+• _build_hierarchical_context (simple transformation)
+• _get_block_at_position (simple lookup)
+• _calculate_chunk_statistics (straightforward math)
+• _save_output (simple I/O)
+• process (well-documented orchestration)
+• _chunk_page (well-documented orchestration)
+• _setup_logging (standard configuration)
+
+
+WHY THIS APPROACH?
+──────────────────
+
+Visual guides are MOST VALUABLE for:
+✓ Complex algorithms with multiple decision points
+✓ Functions with non-obvious behavior
+✓ Concepts that benefit from visual representation
+✓ Functions students will struggle to understand from code alone
+
+Visual guides are OVERKILL for:
+✗ Simple transformations
+✗ Standard patterns (logging, I/O)
+✗ Well-documented sequential flows
+✗ Utility functions with obvious behavior
+
+
+COST/BENEFIT ANALYSIS:
+──────────────────────
+
+Creating guides:
+  Time: ~1-2 hours per guide
+  Benefit: Dramatic improvement in student understanding
+
+For complex functions:
+  Without guide: Students struggle for hours, many don't fully grasp it
+  With guide: Students understand in 20-30 minutes
+
+For simple functions:
+  Without guide: Students understand from code comments in 5-10 minutes
+  With guide: Students understand in 5-10 minutes (no improvement)
+
+Verdict: Focus effort where it multiplies understanding.
+
+
+================================================================================
+PART 8: NEXT STEPS - Creating Remaining Guides
+================================================================================
+
+If you want to create the remaining high-value guides, here's the priority:
+
+NEXT TO CREATE:
+───────────────
+
+1. CROSS_PAGE_DETECTION_GUIDE.txt
+   Functions: _detect_page_continuation() + _merge_continued_pages()
+   Estimated: 500-600 lines
+   Sections:
+   • Why cross-page boundaries are tricky
+   • All continuation patterns with examples
+   • Detection algorithm step-by-step
+   • Merge process visualization
+   • Edge cases and solutions
+
+2. CHUNK_CREATION_GUIDE.txt
+   Functions: _create_chunk() + _validate_chunk()
+   Estimated: 400-500 lines
+   Sections:
+   • Chunk structure anatomy
+   • Context injection process
+   • Quality metrics extraction
+   • Validation checklist
+   • Common issues and fixes
+
+3. DEDUPLICATION_GUIDE.txt
+   Function: _add_chunk_with_dedup()
+   Estimated: 300-400 lines
+   Sections:
+   • Why duplicates occur
+   • Hash-based deduplication
+   • Why check only last 5
+   • Hash collision math
+   • Performance analysis
+
+
+CURRENT STATUS:
+───────────────
+
+Created guides: 5/5 critical functions (100%)
+Remaining: 5 important functions (optional but valuable)
+Total coverage: Excellent for learning the core system
+
+
+================================================================================
+END OF DOCUMENTATION INDEX
+================================================================================
+
+This index helps students understand:
+• Which functions exist
+• Why each function matters
+• Where to find documentation
+• What learning path to follow
+• Which concepts need deep study vs. quick review

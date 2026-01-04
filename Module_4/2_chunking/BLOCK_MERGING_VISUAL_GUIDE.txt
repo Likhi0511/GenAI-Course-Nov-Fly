@@ -1,0 +1,642 @@
+================================================================================
+PROTECTED BLOCK MERGING - Complete Visual Guide
+================================================================================
+
+This document shows exactly how overlapping protected blocks are detected
+and merged into single atomic units.
+
+
+================================================================================
+1. WHY BLOCKS OVERLAP - The Problem
+================================================================================
+
+Multiple regex patterns can match OVERLAPPING regions of text.
+This happens because different PDF extractors format content differently,
+and we need patterns to catch all variants.
+
+Example from real document:
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Position: 0                                                      500    │
+│ ┌───────────────────────────────────────────────────────────────────┐   │
+│ │ **Complete Page Visual Analysis**                                │   │
+│ │ This page contains multiple diagrams and charts.                 │   │
+│ │                                                                   │   │
+│ │ **Image 1:** Architecture Diagram                                │   │
+│ │ ![](arch.png)                                                     │   │
+│ │ *AI Description:* Shows three-tier architecture...               │   │
+│ │                                                                   │   │
+│ │ | Component | Status |                                           │   │
+│ │ |-----------|--------|                                           │   │
+│ │ | API       | Active |                                           │   │
+│ └───────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Three patterns match this content:
+
+Pattern 1: "**Complete Page Visual Analysis**" → ENTIRE SECTION (0-500)
+Pattern 2: "**Image 1:**"                      → IMAGE ONLY (100-250)  
+Pattern 3: Table (|---|)                       → TABLE ONLY (300-400)
+
+Visual representation:
+
+Pattern 1: |==========================================================| (0-500)
+Pattern 2:             |===========|                                    (100-250)
+Pattern 3:                                   |=========|                (300-400)
+
+PROBLEM: We have 3 overlapping blocks!
+SOLUTION: Merge them into ONE block (0-500)
+
+
+================================================================================
+2. MERGE ALGORITHM - Step by Step
+================================================================================
+
+INPUT: List of detected blocks (unsorted)
+-------
+blocks = [
+    (300, 400, 'table', 'table content'),     # Table
+    (0, 500, 'image', 'visual analysis'),     # Visual analysis
+    (100, 250, 'image', 'image 1'),           # Image 1
+]
+
+STEP 1: Sort by starting position
+----------------------------------
+
+blocks.sort(key=lambda x: x[0])
+
+Result:
+blocks = [
+    (0, 500, 'image', 'visual analysis'),     # Now first
+    (100, 250, 'image', 'image 1'),           # Now second
+    (300, 400, 'table', 'table content'),     # Now third
+]
+
+Visual:
+Position:  0         100        250   300        400        500
+           ├──────────┼──────────┼─────┼──────────┼──────────┤
+Block 1:   |================================================|
+Block 2:              |==========|
+Block 3:                               |==========|
+
+
+STEP 2: Initialize merged list
+-------------------------------
+
+merged_blocks = []
+
+
+STEP 3: Process Block 1 (0, 500)
+--------------------------------
+
+merged_blocks is empty
+→ Add Block 1 directly
+
+merged_blocks = [
+    (0, 500, 'image', 'visual analysis')
+]
+
+
+STEP 4: Process Block 2 (100, 250)
+----------------------------------
+
+Compare with previous (last in merged_blocks):
+  previous = (0, 500, 'image', '...')
+  current  = (100, 250, 'image', '...')
+
+Check: Is current_start >= previous_end?
+  100 >= 500? NO
+  
+  → Blocks OVERLAP
+
+Check: Does current extend beyond previous?
+  current_end > previous_end?
+  250 > 500? NO
+  
+  → Current is FULLY CONTAINED in previous
+  → Do nothing (already covered)
+
+merged_blocks = [
+    (0, 500, 'image', 'visual analysis')  # Unchanged
+]
+
+Visual:
+Previous:  |================================================| (0-500)
+Current:              |==========|                          (100-250)
+Result:    |================================================| (0-500)
+           ^^^^^^^^^ Current is inside, no merge needed ^^^^^^^
+
+
+STEP 5: Process Block 3 (300, 400)
+----------------------------------
+
+Compare with previous:
+  previous = (0, 500, 'image', '...')
+  current  = (300, 400, 'table', '...')
+
+Check: Is current_start >= previous_end?
+  300 >= 500? NO
+  
+  → Blocks OVERLAP
+
+Check: Does current extend beyond previous?
+  400 > 500? NO
+  
+  → Current is FULLY CONTAINED
+  → Do nothing
+
+merged_blocks = [
+    (0, 500, 'image', 'visual analysis')  # Unchanged
+]
+
+Visual:
+Previous:  |================================================| (0-500)
+Current:                              |==========|           (300-400)
+Result:    |================================================| (0-500)
+           ^^^^^^^^^ Current is inside, no merge needed ^^^^^^^
+
+
+FINAL RESULT
+------------
+
+merged_blocks = [
+    (0, 500, 'image', 'visual analysis')
+]
+
+One block instead of three!
+
+
+================================================================================
+3. THREE MERGE SCENARIOS - Visual Examples
+================================================================================
+
+SCENARIO 1: NO OVERLAP (Blocks are separate)
+=============================================
+
+Block A:  |=============|                    (100-300)
+Block B:                      |==========|   (400-600)
+
+Check: current_start >= previous_end?
+       400 >= 300? YES
+
+Action: Add both blocks separately
+
+Result:
+merged = [
+    (100, 300, 'type_a', 'content_a'),
+    (400, 600, 'type_b', 'content_b')
+]
+
+Timeline view:
+Position: 0    100        300   400        600
+          ├─────┼──────────┼─────┼──────────┤
+Block A:        |==========|
+Block B:                          |==========|
+Result:         |==========|      |==========|
+
+
+SCENARIO 2: PARTIAL OVERLAP (Current extends beyond previous)
+==============================================================
+
+Block A:  |====================|             (100-400)
+Block B:              |=================|    (250-600)
+
+Check: current_start >= previous_end?
+       250 >= 400? NO → OVERLAP
+
+Check: current_end > previous_end?
+       600 > 400? YES → EXTENDS BEYOND
+
+Action: MERGE by extending previous to cover both
+
+Merge logic:
+  new_start = previous_start = 100
+  new_end   = current_end    = 600
+  new_type  = previous_type  (keep outer block type)
+  new_content = text[100:600] (extract from original)
+
+Result:
+merged = [
+    (100, 600, 'type_a', 'extended content')
+]
+
+Timeline view:
+Position: 0    100        250   400        600
+          ├─────┼──────────┼─────┼──────────┤
+Block A:        |==========|
+Block B:                    |===============|
+Merged:         |===========================|
+
+CODE:
+if block[1] > previous[1]:
+    merged_blocks[-1] = (
+        previous[0],              # Start: 100
+        block[1],                 # End: 600
+        previous[2],              # Type: keep previous
+        text[previous[0]:block[1]] # Content: 100 to 600
+    )
+
+
+SCENARIO 3: FULL CONTAINMENT (Current inside previous)
+=======================================================
+
+Block A:  |=============================|    (100-600)
+Block B:        |============|               (200-400)
+
+Check: current_start >= previous_end?
+       200 >= 600? NO → OVERLAP
+
+Check: current_end > previous_end?
+       400 > 600? NO → DOESN'T EXTEND
+
+Action: DO NOTHING (current already covered)
+
+Result:
+merged = [
+    (100, 600, 'type_a', 'content_a')  # Unchanged
+]
+
+Timeline view:
+Position: 0    100   200        400   600
+          ├─────┼─────┼──────────┼─────┤
+Block A:        |===================|
+Block B:              |==========|
+Result:         |===================|
+
+CODE:
+# No explicit if statement needed
+# If block[1] <= previous[1], we just continue to next iteration
+# The contained block is implicitly ignored
+
+
+================================================================================
+4. REAL-WORLD EXAMPLE - Morgan Stanley Document
+================================================================================
+
+Content at positions 0-850:
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ **Images on this page:**                                    (0-100)     │
+│                                                                         │
+│ **Image 1:** System Architecture                            (100-350)  │
+│ ![](figures/architecture.png)                                           │
+│ *AI Description:* The diagram illustrates...                            │
+│                                                                         │
+│ **Visual Content**                                           (200-500)  │
+│ Multiple diagrams showing the framework...                              │
+│                                                                         │
+│ | Component | Role     |                                     (600-850)  │
+│ |-----------|----------|                                                │
+│ | Frontend  | UI Layer |                                                │
+│ | Backend   | API      |                                                │
+│                                                                         │
+│ **Table 1 Summary:** The table categorizes...                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Pattern matches:
+
+Pattern: r"\*\*Images? on this page:?\*\*.*"
+Match: (0, 100, 'image', '**Images on this page:**')
+
+Pattern: r"\*\*Image \d+:?\*\*.*AI Description.*"
+Match: (100, 350, 'image', '**Image 1:** ... *AI Description:* ...')
+
+Pattern: r"\*\*Visual Content.*?\*\*.*"
+Match: (200, 500, 'image', '**Visual Content** Multiple diagrams...')
+
+Pattern: r"\|.*\|.*\|.*Table.*Summary"
+Match: (600, 850, 'table', '| Component | Role |...Table 1 Summary...')
+
+
+VISUALIZATION OF OVERLAPS
+==========================
+
+Position: 0    100   200   350   500   600   850
+          ├─────┼─────┼─────┼─────┼─────┼─────┤
+
+Pattern 1 |====|                                    (0-100)
+Pattern 2       |===========|                       (100-350)
+Pattern 3             |===========|                 (200-500)
+Pattern 4                               |==========| (600-850)
+
+OVERLAP 1: Pattern 2 and Pattern 3
+  Pattern 2: |===========|              (100-350)
+  Pattern 3:       |===========|        (200-500)
+  
+  Type: PARTIAL OVERLAP
+  Pattern 3 extends beyond Pattern 2
+
+OVERLAP 2: Pattern 1 is SEPARATE from others (gap at 100)
+
+
+MERGE PROCESS
+=============
+
+Step 1: Sort blocks
+-------------------
+[
+    (0, 100, 'image', 'Images on this page'),
+    (100, 350, 'image', 'Image 1 with description'),
+    (200, 500, 'image', 'Visual Content section'),
+    (600, 850, 'table', 'Table with summary')
+]
+
+Step 2: Process (0, 100)
+------------------------
+merged = [(0, 100, 'image', '...')]
+
+Step 3: Process (100, 350)
+---------------------------
+Previous: (0, 100)
+Current:  (100, 350)
+
+Check overlap: 100 >= 100? YES (touching boundary)
+Action: Add as separate
+
+merged = [
+    (0, 100, 'image', '...'),
+    (100, 350, 'image', '...')
+]
+
+Step 4: Process (200, 500)
+---------------------------
+Previous: (100, 350)
+Current:  (200, 500)
+
+Check overlap: 200 >= 350? NO → OVERLAP
+Check extend: 500 > 350? YES → EXTENDS
+
+Action: MERGE!
+  new_start = 100
+  new_end = 500
+  new_content = text[100:500]
+
+merged = [
+    (0, 100, 'image', '...'),
+    (100, 500, 'image', 'Image 1 + Visual Content MERGED')
+]
+
+Visual of merge:
+Before:       |==========|              (100-350)
+                    |===========|       (200-500)
+After:        |===================|     (100-500)
+
+Step 5: Process (600, 850)
+---------------------------
+Previous: (100, 500)
+Current:  (600, 850)
+
+Check overlap: 600 >= 500? YES → NO OVERLAP
+Action: Add separately
+
+merged = [
+    (0, 100, 'image', '...'),
+    (100, 500, 'image', 'Image 1 + Visual Content'),
+    (600, 850, 'table', 'Table with summary')
+]
+
+FINAL RESULT
+============
+
+3 blocks instead of 4:
+
+Block 1: (0, 100)     - "Images on this page" header
+Block 2: (100, 500)   - Image 1 merged with Visual Content  
+Block 3: (600, 850)   - Table with summary
+
+Timeline:
+Position: 0    100              500   600        850
+          ├─────┼────────────────┼─────┼──────────┤
+Result:   |====|================|     |==========|
+
+
+================================================================================
+5. EDGE CASES
+================================================================================
+
+EDGE CASE 1: Three overlapping blocks in sequence
+==================================================
+
+Block A:  |====================|               (100-400)
+Block B:        |====================|          (200-500)
+Block C:              |====================|    (300-600)
+
+Process order:
+1. Add Block A: merged = [(100, 400)]
+
+2. Process Block B (200, 500):
+   200 < 400 (overlap) AND 500 > 400 (extends)
+   → Merge: merged = [(100, 500)]
+
+3. Process Block C (300, 600):
+   300 < 500 (overlap) AND 600 > 500 (extends)
+   → Merge: merged = [(100, 600)]
+
+Final: ONE block (100, 600)
+
+Timeline:
+Block A:  |==========|
+Block B:        |==========|
+Block C:              |==========|
+Result:   |======================|
+
+
+EDGE CASE 2: Identical blocks (exact same position)
+====================================================
+
+Block A:  |====================|    (100-400)
+Block B:  |====================|    (100-400)
+
+Process:
+1. Add Block A: merged = [(100, 400)]
+
+2. Process Block B (100, 400):
+   100 < 400? NO → 100 >= 400? NO
+   
+   Actually: 100 < 400 (overlap)
+   But: 400 > 400? NO (doesn't extend)
+   
+   → Do nothing (fully contained)
+
+Final: ONE block (100, 400)
+
+
+EDGE CASE 3: Many small blocks inside one large block
+======================================================
+
+Block A:  |=======================================| (0-1000)
+Block B:    |===|                                    (50-100)
+Block C:          |===|                              (200-250)
+Block D:                |===|                        (400-450)
+Block E:                      |===|                  (600-650)
+
+Process:
+1. Add Block A: merged = [(0, 1000)]
+
+2-5. Process Blocks B, C, D, E:
+   All are fully contained (end <= 1000)
+   → All ignored
+
+Final: ONE block (0, 1000)
+
+This is CORRECT because:
+- Block A (Visual Analysis) already captures everything
+- Nested blocks are just sub-components
+- One chunk is semantically correct
+
+
+================================================================================
+6. CODE WALKTHROUGH WITH COMMENTS
+================================================================================
+
+```python
+# Sort blocks by starting position
+blocks.sort(key=lambda x: x[0])
+
+merged_blocks = []
+
+for block in blocks:
+    # DECISION POINT 1: Is this the first block?
+    if not merged_blocks:
+        merged_blocks.append(block)
+        continue
+    
+    previous = merged_blocks[-1]
+    
+    # Extract positions for clarity
+    current_start = block[0]
+    current_end = block[1]
+    prev_start = previous[0]
+    prev_end = previous[1]
+    
+    # DECISION POINT 2: Do blocks overlap?
+    if current_start >= prev_end:
+        # NO OVERLAP - blocks are separate
+        # Example: prev(100-300), current(400-600)
+        # 400 >= 300 → separate
+        merged_blocks.append(block)
+        continue
+    
+    # If we're here: current_start < prev_end → OVERLAP
+    
+    # DECISION POINT 3: Does current extend beyond previous?
+    if current_end > prev_end:
+        # PARTIAL OVERLAP - extend previous
+        # Example: prev(100-400), current(250-600)
+        # 250 < 400 (overlap) AND 600 > 400 (extends)
+        
+        merged_blocks[-1] = (
+            prev_start,                    # Keep original start
+            current_end,                   # Extend to new end
+            previous[2],                   # Keep previous type
+            text[prev_start:current_end]   # Extract merged content
+        )
+    
+    # IMPLICIT DECISION POINT 4: Full containment
+    # If current_end <= prev_end, do nothing
+    # Example: prev(100-600), current(200-400)
+    # 200 < 600 (overlap) BUT 400 <= 600 (contained)
+    # No code needed - just continue to next block
+
+return merged_blocks
+```
+
+
+================================================================================
+7. SUMMARY - Decision Tree
+================================================================================
+
+                        ┌──────────────┐
+                        │ Process Block │
+                        └───────┬───────┘
+                                │
+                   ┌────────────┴────────────┐
+                   │                         │
+            First block?                    │
+                   │                         │
+                  YES                       NO
+                   │                         │
+                   ▼                         ▼
+            ┌──────────┐         ┌────────────────────┐
+            │   ADD    │         │ Compare with       │
+            │ directly │         │ previous block     │
+            └──────────┘         └─────────┬──────────┘
+                                           │
+                              ┌────────────┴────────────┐
+                              │                         │
+                    current_start >= prev_end?          │
+                              │                         │
+                            YES                        NO
+                              │                         │
+                              ▼                         ▼
+                        ┌──────────┐         ┌─────────────────┐
+                        │   ADD    │         │   OVERLAP!      │
+                        │ separate │         │                 │
+                        └──────────┘         └────────┬────────┘
+                                                      │
+                                         ┌────────────┴────────────┐
+                                         │                         │
+                               current_end > prev_end?             │
+                                         │                         │
+                                       YES                        NO
+                                         │                         │
+                                         ▼                         ▼
+                              ┌──────────────────┐     ┌──────────────────┐
+                              │  PARTIAL OVERLAP │     │ FULL CONTAINMENT │
+                              │                  │     │                  │
+                              │  Extend previous │     │   Do nothing     │
+                              │  to current_end  │     │  (already inside)│
+                              └──────────────────┘     └──────────────────┘
+
+
+================================================================================
+8. VISUAL SUMMARY
+================================================================================
+
+THREE CASES AT A GLANCE:
+
+Case 1: Separate Blocks
+────────────────────────
+Previous: |=====|
+Current:            |=====|
+Action:   ADD NEW
+
+Case 2: Partial Overlap
+────────────────────────
+Previous: |=====|
+Current:      |=====|
+Action:   |=========|  (EXTEND)
+
+Case 3: Full Containment
+─────────────────────────
+Previous: |===========|
+Current:    |===|
+Action:   |===========|  (IGNORE)
+
+
+WHY THIS MATTERS FOR CHUNKING:
+───────────────────────────────
+
+Without merging:
+  Chunk 1: Visual Analysis header (0-100)
+  Chunk 2: Image 1 content (100-350)
+  Chunk 3: Visual Content text (200-500)
+  
+  → User asks about "visual analysis"
+  → Retrieves 3 separate chunks with duplicate/conflicting content
+  → Confusing results
+
+With merging:
+  Chunk 1: Complete Visual Analysis section (0-500)
+  
+  → User asks about "visual analysis"  
+  → Retrieves 1 comprehensive chunk
+  → Clear, complete answer
+
+
+================================================================================
+END OF MERGING GUIDE
+================================================================================
+
+Use this guide to understand how the chunker resolves overlapping patterns
+and creates clean, non-overlapping protected blocks for optimal RAG retrieval.

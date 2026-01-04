@@ -1,0 +1,762 @@
+================================================================================
+_SMART_SPLIT - Complete Visual Guide
+================================================================================
+
+This document explains how the _smart_split function intelligently splits
+oversized text chunks at natural boundaries while preserving readability.
+
+
+================================================================================
+1. WHAT IS _SMART_SPLIT?
+================================================================================
+
+PURPOSE:
+────────
+When a text section exceeds max_size (2500 chars), we need to split it.
+But we can't just cut at character 2500 - that would break words, sentences,
+or even paragraphs mid-thought.
+
+_smart_split finds the BEST place to split within the size limit.
+
+ANALOGY: Cutting a sandwich
+────────────────────────────
+Bad:  Cut through the middle of the bread
+Good: Cut between slices or at natural fold
+
+Bad split:  "The system architect|ure consists of..."
+Good split: "The system architecture consists of components.| Next paragraph..."
+
+
+================================================================================
+2. THE PRIORITY HIERARCHY - What to Look For
+================================================================================
+
+_smart_split searches for split points in this priority order:
+
+Priority 1: DOUBLE NEWLINE (paragraph boundary)
+────────────────────────────────────────────────
+Pattern: \n\n
+Why: Cleanest break - complete paragraph
+
+Example:
+┌─────────────────────────────────────────────────────────────┐
+│ First paragraph talks about introduction.                   │
+│ It contains several sentences.                              │
+│                                                              │  ← SPLIT HERE!
+│ Second paragraph discusses methodology.                     │
+│ This is a new topic.                                        │
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+  Chunk 1: "First paragraph talks about introduction.\n
+            It contains several sentences."
+  Chunk 2: "Second paragraph discusses methodology.\n
+            This is a new topic."
+
+Both chunks are complete, readable paragraphs.
+
+
+Priority 2: PERIOD + SPACE (sentence boundary)
+───────────────────────────────────────────────
+Pattern: ". "
+Why: Next best - complete sentence
+
+Example:
+┌─────────────────────────────────────────────────────────────┐
+│ The analysis shows three trends. First is automation.       │
+│                                   ▲                          │
+│                              SPLIT HERE!                     │
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+  Chunk 1: "The analysis shows three trends."
+  Chunk 2: "First is automation."
+
+
+Priority 3: COMMA + SPACE (clause boundary)
+────────────────────────────────────────────
+Pattern: ", "
+Why: Acceptable - breaks at natural pause
+
+Example:
+┌─────────────────────────────────────────────────────────────┐
+│ The system includes databases, caching layers, and APIs     │
+│                                 ▲                            │
+│                            SPLIT HERE!                       │
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+  Chunk 1: "The system includes databases,"
+  Chunk 2: "caching layers, and APIs"
+
+
+Priority 4: SPACE (word boundary)
+──────────────────────────────────
+Pattern: " "
+Why: Last resort - at least don't break words
+
+Example:
+┌─────────────────────────────────────────────────────────────┐
+│ The comprehensive analysis demonstrates significant results │
+│                                         ▲                    │
+│                                    SPLIT HERE!               │
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+  Chunk 1: "The comprehensive analysis demonstrates"
+  Chunk 2: "significant results"
+
+
+Priority 5: FALLBACK (hard cut)
+────────────────────────────────
+When: No suitable boundary found
+Why: Better than nothing, but rare
+
+Example:
+┌─────────────────────────────────────────────────────────────┐
+│ averylongwordwithoutanyspacesatallcontinuingforever...      │
+│                                         ▲                    │
+│                                  SPLIT AT MAX!               │
+└─────────────────────────────────────────────────────────────┘
+
+Result:
+  Chunk 1: "averylongwordwithoutanyspacesatallcontinu"
+  Chunk 2: "ingforever..."
+
+
+================================================================================
+3. ALGORITHM WALKTHROUGH - Step by Step
+================================================================================
+
+INPUT:
+──────
+text = """
+First paragraph with introduction. It explains the concept.
+
+Second paragraph with more details. This continues the topic.
+Third sentence adds more. And a fourth one too.
+
+Final paragraph concludes.
+"""
+Length: 2800 characters (exceeds max_size of 2500)
+
+
+STEP 1: Calculate target split position
+────────────────────────────────────────
+
+max_size = 2500
+target_position = max_size = 2500
+
+We want to split near position 2500, but at a good boundary.
+
+
+STEP 2: Try Priority 1 - Find last "\n\n" before position 2500
+───────────────────────────────────────────────────────────────
+
+Search backward from position 2500 for "\n\n"
+
+Text visualization:
+Position: 0    500   1000  1500  2000  2500  2800
+          ├─────┼─────┼─────┼─────┼─────┼─────┤
+Text:     First para...      Second para...  Final para
+Breaks:        ▲                    ▲
+             pos=150              pos=1800
+
+Found: "\n\n" at position 1800 (before target 2500)
+
+Check: Is position 1800 reasonable?
+  - Not too close to start (> 0)
+  - Within acceptable range
+
+Decision: USE THIS SPLIT!
+
+Split at position 1800:
+
+Chunk 1 (0 to 1800):
+┌─────────────────────────────────────────────────────────────┐
+│ First paragraph with introduction. It explains the concept. │
+│                                                              │
+│ Second paragraph with more details. This continues the      │
+│ topic. Third sentence adds more. And a fourth one too.      │
+└─────────────────────────────────────────────────────────────┘
+
+Chunk 2 (1800 to 2800):
+┌─────────────────────────────────────────────────────────────┐
+│                                                              │
+│ Final paragraph concludes.                                  │
+└─────────────────────────────────────────────────────────────┘
+
+Both chunks are complete paragraphs!
+
+
+ALTERNATIVE SCENARIO - No double newline found:
+────────────────────────────────────────────────
+
+If no "\n\n" exists before position 2500...
+
+STEP 3: Try Priority 2 - Find last ". " before position 2500
+─────────────────────────────────────────────────────────────
+
+Text: "Long paragraph without breaks. First sentence ends here. 
+       Second sentence continues. [position 2500 is here] Third sentence..."
+
+Search backward from 2500 for ". "
+
+Found: ". " at position 2200
+
+Split at 2200:
+  Chunk 1: "Long paragraph... Second sentence continues."
+  Chunk 2: "Third sentence..."
+
+Complete sentences on both sides!
+
+
+ALTERNATIVE SCENARIO - No period+space found:
+──────────────────────────────────────────────
+
+STEP 4: Try Priority 3 - Find last ", " before position 2500
+─────────────────────────────────────────────────────────────
+
+Text: "A very long sentence with items including databases, caching, 
+       [position 2500] APIs, and more"
+
+Found: ", " at position 2300
+
+Split at 2300:
+  Chunk 1: "... including databases,"
+  Chunk 2: "caching, APIs, and more"
+
+
+ALTERNATIVE SCENARIO - No comma+space found:
+─────────────────────────────────────────────
+
+STEP 5: Try Priority 4 - Find last " " before position 2500
+────────────────────────────────────────────────────────────
+
+Text: "Averylongsentencewithoutpunctuationbuthaswords like these"
+                                                   ▲
+                                            position 2500
+
+Found: " " at position 2480
+
+Split at 2480:
+  Chunk 1: "...words like"
+  Chunk 2: "these"
+
+At least we didn't break a word!
+
+
+ALTERNATIVE SCENARIO - No spaces at all (rare):
+────────────────────────────────────────────────
+
+STEP 6: Fallback - Hard split at max_size
+──────────────────────────────────────────
+
+Text: "averylongwordwithnospacesatallcontinuing..."
+
+Split at exactly 2500:
+  Chunk 1: "averylongwordwithnospacesatallcon..." (2500 chars)
+  Chunk 2: "tinuing..."
+
+
+================================================================================
+4. CODE IMPLEMENTATION WITH COMMENTS
+================================================================================
+
+```python
+def _smart_split(self, text: str) -> List[str]:
+    """
+    Split oversized text at natural boundaries.
+    
+    Priority order for split points:
+    1. Paragraph boundary (\n\n) - cleanest
+    2. Sentence boundary (. )   - very good
+    3. Clause boundary (, )     - acceptable
+    4. Word boundary ( )        - last resort
+    5. Hard cut at max_size     - fallback
+    """
+    
+    # If text fits in max_size, no split needed
+    if len(text) <= self.max_size:
+        return [text]
+    
+    chunks = []
+    remaining = text
+    
+    while len(remaining) > self.max_size:
+        # Try each boundary type in priority order
+        
+        # Priority 1: Paragraph boundary
+        split_pos = remaining[:self.max_size].rfind('\n\n')
+        
+        # If found and reasonable (not at start)
+        if split_pos > 0:
+            # Split at paragraph boundary
+            chunk = remaining[:split_pos].strip()
+            remaining = remaining[split_pos:].strip()
+            chunks.append(chunk)
+            continue
+        
+        # Priority 2: Sentence boundary
+        split_pos = remaining[:self.max_size].rfind('. ')
+        if split_pos > 0:
+            # +2 to include ". " in first chunk
+            chunk = remaining[:split_pos + 2].strip()
+            remaining = remaining[split_pos + 2:].strip()
+            chunks.append(chunk)
+            continue
+        
+        # Priority 3: Clause boundary
+        split_pos = remaining[:self.max_size].rfind(', ')
+        if split_pos > 0:
+            # +2 to include ", " in first chunk
+            chunk = remaining[:split_pos + 2].strip()
+            remaining = remaining[split_pos + 2:].strip()
+            chunks.append(chunk)
+            continue
+        
+        # Priority 4: Word boundary
+        split_pos = remaining[:self.max_size].rfind(' ')
+        if split_pos > 0:
+            chunk = remaining[:split_pos].strip()
+            remaining = remaining[split_pos:].strip()
+            chunks.append(chunk)
+            continue
+        
+        # Priority 5: Fallback - hard cut
+        chunk = remaining[:self.max_size]
+        remaining = remaining[self.max_size:]
+        chunks.append(chunk)
+    
+    # Add remaining text (last chunk)
+    if remaining:
+        chunks.append(remaining.strip())
+    
+    return chunks
+```
+
+
+================================================================================
+5. VISUAL EXAMPLES - All Priority Levels
+================================================================================
+
+EXAMPLE 1: Priority 1 - Paragraph boundary
+═══════════════════════════════════════════
+
+Input (3000 chars):
+┌─────────────────────────────────────────────────────────────┐
+│ Para 1: Introduction text... (1000 chars)                   │
+│                                                              │  ← \n\n at 1000
+│ Para 2: Methodology text... (1000 chars)                    │
+│                                                              │  ← \n\n at 2000
+│ Para 3: Results text... (1000 chars)                        │
+└─────────────────────────────────────────────────────────────┘
+
+max_size = 2500
+
+Search in first 2500 chars for last "\n\n"
+Found at position 2000
+
+Split:
+┌────────────────────────────────┐  ┌──────────────────────┐
+│ Para 1                         │  │                      │
+│                                │  │ Para 3               │
+│ Para 2                         │  │                      │
+└────────────────────────────────┘  └──────────────────────┘
+    Chunk 1 (2000 chars)               Chunk 2 (1000 chars)
+
+
+EXAMPLE 2: Priority 2 - Sentence boundary
+═══════════════════════════════════════════
+
+Input: Single long paragraph (2800 chars, no \n\n)
+┌─────────────────────────────────────────────────────────────┐
+│ Sentence 1 ends. Sentence 2 ends. Sentence 3 ends. ...     │
+│              ▲               ▲               ▲              │
+│           pos=400        pos=800         pos=1200           │
+└─────────────────────────────────────────────────────────────┘
+
+max_size = 2500
+
+Search in first 2500 chars for last ". "
+Found at position 2400
+
+Split:
+┌──────────────────────────────────────┐  ┌─────────────────┐
+│ Sentence 1 ends. ... Sentence 10    │  │ Sentence 11.    │
+│ ends.                                │  │ ...             │
+└──────────────────────────────────────┘  └─────────────────┘
+        Chunk 1 (2400 chars)                Chunk 2 (400 chars)
+
+
+EXAMPLE 3: Priority 3 - Comma boundary
+═══════════════════════════════════════
+
+Input: One very long sentence (2700 chars)
+┌─────────────────────────────────────────────────────────────┐
+│ The system includes databases, APIs, caching, queues, ...   │
+│                                 ▲      ▲         ▲           │
+│                            pos=800  pos=1200  pos=1600       │
+└─────────────────────────────────────────────────────────────┘
+
+max_size = 2500
+
+Search in first 2500 chars for last ", "
+Found at position 2300
+
+Split:
+┌───────────────────────────────────┐  ┌──────────────────────┐
+│ The system includes ... caching,  │  │ queues, and more     │
+└───────────────────────────────────┘  └──────────────────────┘
+      Chunk 1 (2300 chars)                Chunk 2 (400 chars)
+
+
+EXAMPLE 4: Priority 4 - Space boundary
+═══════════════════════════════════════
+
+Input: Text with no punctuation (2600 chars)
+┌─────────────────────────────────────────────────────────────┐
+│ word1 word2 word3 word4 word5 word6 word7 word8 word9 ...   │
+│      ▲     ▲     ▲     ▲     ▲     ▲     ▲     ▲            │
+└─────────────────────────────────────────────────────────────┘
+
+max_size = 2500
+
+Search in first 2500 chars for last " "
+Found at position 2485
+
+Split:
+┌────────────────────────────────────┐  ┌────────────────────┐
+│ word1 word2 ... word150            │  │ word151 ... word200│
+└────────────────────────────────────┘  └────────────────────┘
+     Chunk 1 (2485 chars)                 Chunk 2 (115 chars)
+
+
+EXAMPLE 5: Priority 5 - Hard cut (rare)
+════════════════════════════════════════
+
+Input: One continuous word (2600 chars)
+┌─────────────────────────────────────────────────────────────┐
+│ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...       │
+│ (no spaces, no punctuation)                                 │
+└─────────────────────────────────────────────────────────────┘
+
+max_size = 2500
+
+No boundaries found - hard cut at 2500
+
+Split:
+┌─────────────────────────────────────┐  ┌──────────────────┐
+│ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa     │  │ aaaaaaaaaaaaa    │
+└─────────────────────────────────────┘  └──────────────────┘
+      Chunk 1 (exactly 2500 chars)         Chunk 2 (100 chars)
+
+
+================================================================================
+6. WHY EACH PRIORITY LEVEL MATTERS
+================================================================================
+
+Priority 1: \n\n (Paragraph)
+─────────────────────────────
+Best because:
+✓ Complete semantic unit
+✓ Natural reading flow
+✓ Clear topic boundaries
+✓ Preserves document structure
+
+Example benefit:
+  Query: "What is the methodology?"
+  Good split: Retrieved chunk contains complete methodology paragraph
+  Bad split: Retrieved chunk has half methodology, half results (confusing)
+
+
+Priority 2: ". " (Sentence)
+────────────────────────────
+Good because:
+✓ Complete thought
+✓ Grammatically correct
+✓ Makes sense in isolation
+✓ Natural pause point
+
+Example benefit:
+  Query: "How does the system work?"
+  Good split: "The system processes data in three steps."
+  Bad split: "The system processes data in thr" (incomplete)
+
+
+Priority 3: ", " (Clause)
+──────────────────────────
+Acceptable because:
+✓ Reasonable break point
+✓ Maintains some context
+~ Not complete thought but understandable
+~ May need surrounding context
+
+Example:
+  "The system includes databases, caching, and APIs"
+  Split at comma: "The system includes databases," | "caching, and APIs"
+  Both parts need context to be fully meaningful
+
+
+Priority 4: " " (Word)
+───────────────────────
+Last resort because:
+✓ Doesn't break words
+✗ May break mid-thought
+✗ Awkward reading
+✗ Loses context
+
+Example:
+  "The comprehensive analysis demonstrates significant"
+  Split loses flow, but at least words are intact
+
+
+Priority 5: Hard cut
+────────────────────
+Fallback only:
+✗ Breaks words
+✗ Unreadable
+✗ Very rare in practice
+
+Only happens with:
+- Very long URLs
+- Base64 encoded data
+- Malformed text
+
+
+================================================================================
+7. PERFORMANCE CONSIDERATIONS
+================================================================================
+
+Why use rfind() (reverse find)?
+────────────────────────────────
+
+rfind() searches BACKWARD from the end:
+  text[:2500].rfind('\n\n')
+  
+  Starts at position 2500 → searches ← toward 0
+  
+Why backward?
+- We want the LAST occurrence before max_size
+- This gives us the largest possible first chunk
+- More efficient than finding all occurrences
+
+
+Time Complexity:
+────────────────
+
+Best case:  O(1) - Text fits in max_size, return immediately
+Worst case: O(n) - Must search all priorities, split multiple times
+
+Where n = length of text
+
+For most documents:
+- One or two priorities checked per split
+- Usually 1-3 splits per oversized section
+- Total: Very fast even for large documents
+
+
+Memory Efficiency:
+──────────────────
+
+String slicing in Python:
+  text[:2500]  - Creates new string (copy)
+  
+For 10MB text split into chunks:
+  - Temporary strings created during search
+  - Final chunks stored
+  - Total memory: ~2x original size (acceptable)
+
+
+================================================================================
+8. EDGE CASES
+================================================================================
+
+EDGE CASE 1: Text exactly max_size
+───────────────────────────────────
+
+Input: 2500 chars (exactly max_size)
+
+Check: len(text) <= self.max_size?
+       2500 <= 2500? YES
+
+Return: [text]  (no split needed)
+
+
+EDGE CASE 2: Very short text
+─────────────────────────────
+
+Input: 100 chars (well under max_size)
+
+Check: len(text) <= self.max_size?
+       100 <= 2500? YES
+
+Return: [text]
+
+
+EDGE CASE 3: Multiple splits needed
+────────────────────────────────────
+
+Input: 7000 chars
+
+Iteration 1:
+  Split at position ~2000 (paragraph boundary)
+  Chunks: [chunk1]
+  Remaining: 5000 chars
+
+Iteration 2 (remaining > max_size):
+  Split at position ~2000 (paragraph boundary)
+  Chunks: [chunk1, chunk2]
+  Remaining: 3000 chars
+
+Iteration 3 (remaining > max_size):
+  Split at position ~2000 (paragraph boundary)
+  Chunks: [chunk1, chunk2, chunk3]
+  Remaining: 1000 chars
+
+Iteration 4 (remaining <= max_size):
+  Exit loop
+  Add remaining: [chunk1, chunk2, chunk3, chunk4]
+
+Result: 4 chunks from 7000 char text
+
+
+EDGE CASE 4: Boundary at position 0
+────────────────────────────────────
+
+Input: "\n\nText starts immediately with paragraph break..."
+
+Search for "\n\n" in first 2500 chars
+Found at position 0
+
+Check: split_pos > 0?
+       0 > 0? NO
+
+Skip this priority, try next (sentence boundary)
+
+Why check > 0?
+- Splitting at 0 creates empty first chunk
+- Wastes processing
+- Move to next priority
+
+
+EDGE CASE 5: Only punctuation before max_size
+──────────────────────────────────────────────
+
+Input: ".,.,.,.,.,text after max_size position..."
+
+All boundaries (., , ) are before meaningful content
+
+Algorithm finds them and splits, but chunks may be tiny:
+  Chunk 1: ".,.,.,.,.,"
+  Chunk 2: "text after max_size position..."
+
+Rare in practice, but handled correctly
+
+
+================================================================================
+9. INTEGRATION WITH CHUNKER
+================================================================================
+
+When is _smart_split called?
+─────────────────────────────
+
+During buffer flushing:
+
+```python
+def _flush_semantic_buffer(...):
+    # Combine buffer contents
+    combined_text = "\n\n".join([s['content'] for s in buffer])
+    
+    # Check if too large
+    if len(combined_text) > self.max_size:
+        # SPLIT IT SMARTLY
+        split_parts = self._smart_split(combined_text)
+        
+        # Create multiple chunks from splits
+        for part in split_parts:
+            chunk = self._create_chunk(part, ...)
+            chunks.append(chunk)
+    else:
+        # Fits in one chunk
+        chunk = self._create_chunk(combined_text, ...)
+        chunks.append(chunk)
+```
+
+
+Complete flow example:
+──────────────────────
+
+Buffer contains:
+  - Paragraph 1: 800 chars
+  - Paragraph 2: 900 chars
+  - Paragraph 3: 1000 chars
+  Total: 2700 chars (exceeds 2500)
+
+Flush triggered:
+  1. Combine: "Para1\n\nPara2\n\nPara3" (2700 chars)
+  2. Check: 2700 > 2500? YES
+  3. Call: _smart_split("Para1\n\nPara2\n\nPara3")
+  4. Split finds: "\n\n" at position 1700 (after Para2)
+  5. Result: ["Para1\n\nPara2", "Para3"]
+  6. Create: chunk1 from "Para1\n\nPara2" (1700 chars)
+  7. Create: chunk2 from "Para3" (1000 chars)
+
+
+================================================================================
+10. SUMMARY - Quick Reference
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SPLIT PRIORITY DECISION TREE                                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│ Text > max_size?                                                        │
+│        │                                                                │
+│       YES                                                               │
+│        │                                                                │
+│        ├─► Try 1: Find last "\n\n" ──────► Found? ──► SPLIT            │
+│        │                                      │                         │
+│        │                                     NO                         │
+│        │                                      │                         │
+│        ├─► Try 2: Find last ". "  ──────► Found? ──► SPLIT            │
+│        │                                      │                         │
+│        │                                     NO                         │
+│        │                                      │                         │
+│        ├─► Try 3: Find last ", "  ──────► Found? ──► SPLIT            │
+│        │                                      │                         │
+│        │                                     NO                         │
+│        │                                      │                         │
+│        ├─► Try 4: Find last " "   ──────► Found? ──► SPLIT            │
+│        │                                      │                         │
+│        │                                     NO                         │
+│        │                                      │                         │
+│        └─► Try 5: Hard cut at max_size ──────────► SPLIT               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+WHEN TO USE:
+────────────
+- Buffer contents exceed max_size during flush
+- Protected blocks > max_size (rare, but possible)
+- Any text that needs size-based splitting
+
+WHY IT MATTERS:
+───────────────
+Good splits → Readable chunks → Better RAG retrieval → Better answers
+
+Bad splits → Broken chunks → Poor retrieval → Confused LLM
+
+
+KEY TAKEAWAY:
+─────────────
+_smart_split is the SAFETY NET that ensures even oversized content
+gets split at natural, readable boundaries instead of arbitrary positions.
+
+
+================================================================================
+END OF _SMART_SPLIT GUIDE
+================================================================================
+
+Use this guide to understand how the chunker handles oversized content
+gracefully while maintaining readability and semantic coherence.

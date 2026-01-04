@@ -1,0 +1,1011 @@
+================================================================================
+CHUNK CREATION & VALIDATION - Complete Visual Guide
+================================================================================
+
+This document explains how chunks are built from raw content, enriched with
+context and metadata, and validated for quality before being added to output.
+
+
+================================================================================
+1. WHAT IS A CHUNK? - Complete Anatomy
+================================================================================
+
+A chunk is the FINAL OUTPUT unit that gets stored in vector database for RAG.
+It's not just text - it's a rich, structured object with context and metadata.
+
+VISUAL ANATOMY OF A CHUNK:
+──────────────────────────
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           COMPLETE CHUNK OBJECT                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  {                                                                      │
+│    ┌──────────────────────────────────────────────────────────────┐   │
+│    │ "id": "a1b2c3d4e5f6..."          ← MD5 HASH                  │   │
+│    │                                                               │   │
+│    │ Purpose: Unique identifier for deduplication                 │   │
+│    │ Generated from: content_only                                 │   │
+│    │ Length: 32 characters (hexadecimal)                          │   │
+│    └──────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│    ┌──────────────────────────────────────────────────────────────┐   │
+│    │ "text": "Context: Chapter 1 > Analysis\n\n              │   │
+│    │          The system shows 25% improvement..."                │   │
+│    │                                     ▲                         │   │
+│    │                          HIERARCHICAL CONTEXT                │   │
+│    │                          +                                    │   │
+│    │                          ORIGINAL CONTENT                     │   │
+│    │                                                               │   │
+│    │ This is what gets EMBEDDED by the embedding model            │   │
+│    │ Context helps LLM understand chunk position in document      │   │
+│    └──────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│    ┌──────────────────────────────────────────────────────────────┐   │
+│    │ "content_only": "The system shows 25% improvement..."        │   │
+│    │                                                               │   │
+│    │ Purpose: Original content WITHOUT injected context           │   │
+│    │ Used for: Display to users, generating hash                  │   │
+│    └──────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│    ┌──────────────────────────────────────────────────────────────┐   │
+│    │ "metadata": {                     ← RICH METADATA            │   │
+│    │   ┌──────────────────────────────────────────────────────┐  │   │
+│    │   │ "source": "page_005.md"      ← Source file            │  │   │
+│    │   │ "page_number": 5             ← Original PDF page      │  │   │
+│    │   │ "type": "text"               ← text|image|table|code  │  │   │
+│    │   └──────────────────────────────────────────────────────┘  │   │
+│    │                                                               │   │
+│    │   ┌──────────────────────────────────────────────────────┐  │   │
+│    │   │ "breadcrumbs": [             ← Hierarchical path      │  │   │
+│    │   │   "Chapter 1",                                        │  │   │
+│    │   │   "Analysis",                                         │  │   │
+│    │   │   "Results"                                           │  │   │
+│    │   │ ]                                                     │  │   │
+│    │   └──────────────────────────────────────────────────────┘  │   │
+│    │                                                               │   │
+│    │   ┌──────────────────────────────────────────────────────┐  │   │
+│    │   │ "hierarchical_context": {    ← Structured hierarchy  │  │   │
+│    │   │   "level_1": "Chapter 1",                            │  │   │
+│    │   │   "level_2": "Analysis",                             │  │   │
+│    │   │   "level_3": "Results",                              │  │   │
+│    │   │   "full_path": "Chapter 1 > Analysis > Results",     │  │   │
+│    │   │   "depth": 3                                         │  │   │
+│    │   │ }                                                     │  │   │
+│    │   └──────────────────────────────────────────────────────┘  │   │
+│    │                                                               │   │
+│    │   ┌──────────────────────────────────────────────────────┐  │   │
+│    │   │ "char_count": 1245           ← Size metrics          │  │   │
+│    │   └──────────────────────────────────────────────────────┘  │   │
+│    │                                                               │   │
+│    │   ┌──────────────────────────────────────────────────────┐  │   │
+│    │   │ "quality_metrics": {         ← Content analysis      │  │   │
+│    │   │   "word_count": 187,                                 │  │   │
+│    │   │   "sentence_count": 9,                               │  │   │
+│    │   │   "avg_sentence_length": 20.8,                       │  │   │
+│    │   │   "has_numerical_data": true,                        │  │   │
+│    │   │   "has_dates": false,                                │  │   │
+│    │   │   "has_named_entities": true,                        │  │   │
+│    │   │   "has_exhibits": false,                             │  │   │
+│    │   │   "has_citations": true                              │  │   │
+│    │   │ }                                                     │  │   │
+│    │   └──────────────────────────────────────────────────────┘  │   │
+│    │                                                               │   │
+│    │   ┌──────────────────────────────────────────────────────┐  │   │
+│    │   │ "image_path": null           ← For image chunks      │  │   │
+│    │   │ "source_attribution": "Morgan Stanley Research"      │  │   │
+│    │   │ "is_merged": false           ← Cross-page flag       │  │   │
+│    │   │ "merged_from_pages": null    ← Pages if merged       │  │   │
+│    │   └──────────────────────────────────────────────────────┘  │   │
+│    │ }                                                             │   │
+│    └──────────────────────────────────────────────────────────────┘   │
+│  }                                                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+WHY SO MUCH METADATA?
+─────────────────────
+
+Each field serves a specific purpose in RAG:
+
+✓ "text" with context → Better embedding quality
+✓ "content_only" → Clean display to users
+✓ "breadcrumbs" → Filtering and navigation
+✓ "page_number" → Citation and source tracking
+✓ "quality_metrics" → Ranking and filtering
+✓ "source_attribution" → Legal compliance, credibility
+
+
+================================================================================
+2. CHUNK CREATION PROCESS - Step by Step
+================================================================================
+
+FUNCTION: _create_chunk(content, metadata_base, content_type)
+
+INPUT EXAMPLE:
+──────────────
+
+content = """The analysis reveals three key trends:
+1. AI adoption increased 45%
+2. Infrastructure spending grew
+3. ROI concerns diminished
+
+Source: Morgan Stanley Research"""
+
+metadata_base = {
+    'source': 'page_005.md',
+    'page_number': 5,
+    'breadcrumbs': ['Chapter 1', 'Analysis', 'Trends']
+}
+
+content_type = 'text'
+
+
+STEP 1: Clean Content
+─────────────────────
+
+Remove leading/trailing whitespace:
+
+content = content.strip()
+
+Result: No change (already clean in this example)
+
+
+STEP 2: Build Hierarchical Context
+───────────────────────────────────
+
+Convert breadcrumbs to structured hierarchy:
+
+breadcrumbs = ['Chapter 1', 'Analysis', 'Trends']
+
+Call: _build_hierarchical_context(breadcrumbs)
+
+Returns:
+{
+    'level_1': 'Chapter 1',
+    'level_2': 'Analysis',
+    'level_3': 'Trends',
+    'full_path': 'Chapter 1 > Analysis > Trends',
+    'depth': 3
+}
+
+Visual representation:
+┌─────────────┐
+│ Chapter 1   │ ← Level 1
+├─────────────┤
+│ Analysis    │ ← Level 2
+├─────────────┤
+│ Trends      │ ← Level 3
+└─────────────┘
+
+
+STEP 3: Inject Context into Text
+─────────────────────────────────
+
+Create context header from breadcrumbs:
+
+context_header = "Context: Chapter 1 > Analysis > Trends"
+
+Combine with original content:
+
+text_with_context = context_header + "\n\n" + content
+
+Result:
+┌─────────────────────────────────────────────────────────────┐
+│ Context: Chapter 1 > Analysis > Trends                      │ ← Injected
+│                                                              │
+│ The analysis reveals three key trends:                      │ ← Original
+│ 1. AI adoption increased 45%                                │
+│ 2. Infrastructure spending grew                             │
+│ 3. ROI concerns diminished                                  │
+│                                                              │
+│ Source: Morgan Stanley Research                             │
+└─────────────────────────────────────────────────────────────┘
+
+WHY ADD CONTEXT?
+───────────────
+
+When embedded, context helps the model understand:
+  "This chunk is about TRENDS (specific)
+   Within ANALYSIS section (broader)
+   Within CHAPTER 1 (document structure)"
+
+Better embedding → Better retrieval → Better answers
+
+
+STEP 4: Extract Quality Metrics
+────────────────────────────────
+
+Analyze content characteristics:
+
+Word count:
+  words = content.split()
+  word_count = len(words) = 23
+
+Sentence count:
+  sentences = re.split(r'[.!?]+', content)
+  sentence_count = len([s for s in sentences if s.strip()]) = 5
+
+Average sentence length:
+  avg_sentence_length = word_count / sentence_count = 4.6
+
+Numerical data check:
+  has_numbers = bool(re.search(r'\d', content))
+  Result: True (found "45%")
+
+Dates check:
+  date_patterns = r'\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2}'
+  has_dates = bool(re.search(date_patterns, content))
+  Result: False
+
+Named entities check (simple heuristic):
+  capitalized_words = re.findall(r'\b[A-Z][a-z]+\b', content)
+  has_entities = len(capitalized_words) > 2
+  Result: True ("The", "AI", "Infrastructure", "ROI", "Source", "Morgan", "Stanley", "Research")
+
+Exhibits check:
+  exhibit_patterns = r'Figure \d+|Table \d+|Exhibit \d+'
+  has_exhibits = bool(re.search(exhibit_patterns, content))
+  Result: False
+
+Citations check:
+  citation_patterns = r'Source:|©|\(.*\d{4}\)|et al\.'
+  has_citations = bool(re.search(citation_patterns, content))
+  Result: True ("Source: Morgan Stanley Research")
+
+
+STEP 5: Extract Source Attribution
+───────────────────────────────────
+
+Pattern: "Source: <attribution>"
+
+Match: re.search(r'Source:\s*(.+?)(?:\n|$)', content)
+
+Found: "Morgan Stanley Research"
+
+Store in metadata: source_attribution = "Morgan Stanley Research"
+
+
+STEP 6: Generate Chunk ID
+──────────────────────────
+
+Create hash from original content (without context):
+
+import hashlib
+
+chunk_id = hashlib.md5(content.encode('utf-8')).hexdigest()
+
+Result: "a1b2c3d4e5f6789012345678901234ab"
+
+Purpose: Deduplication - same content = same hash
+
+
+STEP 7: Assemble Final Chunk
+─────────────────────────────
+
+chunk = {
+    'id': 'a1b2c3d4e5f6789012345678901234ab',
+    'text': text_with_context,  # With injected context
+    'content_only': content,     # Original content
+    'metadata': {
+        'source': 'page_005.md',
+        'page_number': 5,
+        'type': 'text',
+        'breadcrumbs': ['Chapter 1', 'Analysis', 'Trends'],
+        'hierarchical_context': {
+            'level_1': 'Chapter 1',
+            'level_2': 'Analysis',
+            'level_3': 'Trends',
+            'full_path': 'Chapter 1 > Analysis > Trends',
+            'depth': 3
+        },
+        'char_count': len(content),
+        'quality_metrics': {
+            'word_count': 23,
+            'sentence_count': 5,
+            'avg_sentence_length': 4.6,
+            'has_numerical_data': True,
+            'has_dates': False,
+            'has_named_entities': True,
+            'has_exhibits': False,
+            'has_citations': True
+        },
+        'image_path': None,
+        'source_attribution': 'Morgan Stanley Research',
+        'is_merged': False,
+        'merged_from_pages': None
+    }
+}
+
+
+STEP 8: Return Chunk
+────────────────────
+
+return chunk
+
+
+================================================================================
+3. VALIDATION PROCESS - Quality Gates
+================================================================================
+
+FUNCTION: _validate_chunk(chunk)
+
+Every chunk passes through validation before being added to output.
+
+VALIDATION CATEGORIES:
+──────────────────────
+
+1. Structural Integrity - Required fields exist
+2. Data Completeness - Fields contain valid data
+3. Quality Thresholds - Content meets minimum standards
+
+
+VALIDATION STEP-BY-STEP:
+─────────────────────────
+
+INPUT:
+──────
+
+chunk = {
+    'id': 'abc123...',
+    'text': 'Context: ...\n\nThe analysis...',
+    'content_only': 'The analysis...',
+    'metadata': {...}
+}
+
+
+CHECK 1: Required Fields Exist
+───────────────────────────────
+
+Required fields:
+  - 'id'
+  - 'text'
+  - 'content_only'
+  - 'metadata'
+
+Code:
+```python
+required_fields = ['id', 'text', 'content_only', 'metadata']
+
+for field in required_fields:
+    if field not in chunk:
+        self.logger.error(f"Chunk missing required field: {field}")
+        return False
+```
+
+Example failure:
+┌─────────────────────────────────────────────────────────────┐
+│ chunk = {                                                    │
+│     'id': 'abc123',                                          │
+│     'text': 'Content here',                                  │
+│     # 'content_only' MISSING!                                │
+│     'metadata': {...}                                        │
+│ }                                                            │
+│                                                              │
+│ Result: VALIDATION FAILED                                    │
+│ Reason: Missing 'content_only' field                         │
+└─────────────────────────────────────────────────────────────┘
+
+
+CHECK 2: Metadata Fields Exist
+───────────────────────────────
+
+Required metadata fields:
+  - 'source'
+  - 'page_number'
+  - 'type'
+  - 'breadcrumbs'
+
+Code:
+```python
+metadata = chunk.get('metadata', {})
+required_meta = ['source', 'page_number', 'type', 'breadcrumbs']
+
+for field in required_meta:
+    if field not in metadata:
+        self.logger.error(f"Chunk missing metadata field: {field}")
+        return False
+```
+
+
+CHECK 3: Content Not Empty
+───────────────────────────
+
+Both text and content_only must have actual content:
+
+Code:
+```python
+text = chunk.get('text', '')
+content_only = chunk.get('content_only', '')
+
+if not text.strip():
+    self.logger.error("Chunk has empty 'text' field")
+    return False
+
+if not content_only.strip():
+    self.logger.error("Chunk has empty 'content_only' field")
+    return False
+```
+
+Why .strip()?
+  "   " (spaces only) → .strip() → "" (empty) → FAIL
+  "Text" → .strip() → "Text" → PASS
+
+Example failure:
+┌─────────────────────────────────────────────────────────────┐
+│ chunk = {                                                    │
+│     'id': 'abc123',                                          │
+│     'text': '   \n\n   ',        ← Only whitespace!         │
+│     'content_only': '',          ← Empty!                   │
+│     'metadata': {...}                                        │
+│ }                                                            │
+│                                                              │
+│ Result: VALIDATION FAILED                                    │
+│ Reason: Empty content after stripping whitespace            │
+└─────────────────────────────────────────────────────────────┘
+
+
+CHECK 4: Reasonable Size
+────────────────────────
+
+Content shouldn't exceed max_size by too much:
+
+Code:
+```python
+char_count = len(content_only)
+max_size = self.max_size  # e.g., 2500
+
+# Allow 1.5x buffer for atomic blocks (tables, images)
+threshold = max_size * 1.5  # 3750
+
+if char_count > threshold:
+    self.logger.warning(
+        f"Chunk size {char_count} exceeds threshold {threshold}"
+    )
+    # WARNING, not error - still accept the chunk
+```
+
+Why warning instead of error?
+  - Protected blocks (tables, images) can't be split
+  - Better to have one large chunk than break content
+  - Warning helps identify potential issues
+
+Example warning:
+┌─────────────────────────────────────────────────────────────┐
+│ chunk = {                                                    │
+│     'id': 'abc123',                                          │
+│     'text': '[Very long table with 4000 characters]',       │
+│     'content_only': '[Same table]',                          │
+│     'metadata': {'type': 'table', ...}                       │
+│ }                                                            │
+│                                                              │
+│ char_count = 4000                                            │
+│ threshold = 3750 (2500 * 1.5)                                │
+│                                                              │
+│ Result: WARNING (not failure)                                │
+│ Reason: Table is atomic, can't be split                      │
+│ Action: Accept chunk, log warning                            │
+└─────────────────────────────────────────────────────────────┘
+
+
+CHECK 5: Valid Data Types
+──────────────────────────
+
+Check data types are correct:
+
+Code:
+```python
+# Page number should be integer
+page_num = metadata.get('page_number')
+if not isinstance(page_num, int):
+    self.logger.error(f"Invalid page_number type: {type(page_num)}")
+    return False
+
+# Breadcrumbs should be list
+breadcrumbs = metadata.get('breadcrumbs', [])
+if not isinstance(breadcrumbs, list):
+    self.logger.error(f"Invalid breadcrumbs type: {type(breadcrumbs)}")
+    return False
+```
+
+
+VALIDATION RESULT:
+──────────────────
+
+If ALL checks pass:
+  return True
+
+If ANY check fails:
+  return False
+  (chunk will not be added to output)
+
+
+VALIDATION STATISTICS:
+──────────────────────
+
+Track validation results:
+
+stats = {
+    'total_chunks_processed': 100,
+    'validation_failures': 2,
+    'failure_rate': '2%',
+    'failure_reasons': {
+        'empty_content': 1,
+        'missing_field': 1
+    }
+}
+
+Use this to debug issues in extraction or chunking process.
+
+
+================================================================================
+4. CONTEXT INJECTION - Before and After
+================================================================================
+
+WHY INJECT CONTEXT?
+───────────────────
+
+Embedding models benefit from hierarchical context.
+LLMs better understand chunk position in document.
+
+EXAMPLE 1: Without Context
+───────────────────────────
+
+Chunk text:
+┌─────────────────────────────────────────────────────────────┐
+│ The results show 25% improvement over baseline.             │
+└─────────────────────────────────────────────────────────────┘
+
+User query: "What were the analysis results?"
+
+Vector search finds this chunk, but:
+  ❌ No context about what analysis
+  ❌ No indication this is from results section
+  ❌ LLM has to guess what "baseline" means
+
+
+EXAMPLE 1: With Context
+────────────────────────
+
+Chunk text:
+┌─────────────────────────────────────────────────────────────┐
+│ Context: Chapter 1 > Analysis > Results                     │
+│                                                              │
+│ The results show 25% improvement over baseline.             │
+└─────────────────────────────────────────────────────────────┘
+
+User query: "What were the analysis results?"
+
+Vector search finds this chunk:
+  ✓ Clear this is from "Analysis > Results" section
+  ✓ LLM knows this is results data
+  ✓ Better semantic matching
+  ✓ More confident answer
+
+
+EXAMPLE 2: Nested Context
+──────────────────────────
+
+Without context:
+┌─────────────────────────────────────────────────────────────┐
+│ ROI increased from 15% to 23%.                              │
+└─────────────────────────────────────────────────────────────┘
+
+With context:
+┌─────────────────────────────────────────────────────────────┐
+│ Context: Financial Report > Q3 Results > Marketing          │
+│                                                              │
+│ ROI increased from 15% to 23%.                              │
+└─────────────────────────────────────────────────────────────┘
+
+Now it's clear:
+  ✓ This is Q3 data (not Q1, Q2, or Q4)
+  ✓ This is Marketing ROI (not Engineering or Sales)
+  ✓ This is financial data (not operational)
+
+
+CONTEXT FORMATTING:
+───────────────────
+
+Format: "Context: Level1 > Level2 > Level3"
+
+Separator: " > " (space, greater-than, space)
+  - Clear visual hierarchy
+  - Easy to parse
+  - Human readable
+
+Position: Always at the beginning
+  - Embedding model sees context first
+  - Sets semantic frame for content
+
+
+HOW MUCH CONTEXT?
+─────────────────
+
+All breadcrumb levels included:
+
+Depth 1: "Context: Chapter 1"
+Depth 2: "Context: Chapter 1 > Section A"
+Depth 3: "Context: Chapter 1 > Section A > Part 1"
+Depth 4+: All levels included
+
+Why all levels?
+  - More context = better understanding
+  - Embedding models handle long context well
+  - Helps with filtering (e.g., "show me all Chapter 1 content")
+
+
+================================================================================
+5. QUALITY METRICS - What They Mean
+================================================================================
+
+Each metric serves a specific purpose in RAG systems:
+
+METRIC 1: word_count
+─────────────────────
+
+What: Number of words in chunk
+Range: 50-500+ typical
+Use: Filtering (e.g., "chunks with >200 words")
+
+Code:
+```python
+words = content.split()
+word_count = len(words)
+```
+
+Example:
+  "The system works well." → 4 words
+  "Short." → 1 word
+  "" → 0 words
+
+
+METRIC 2: sentence_count
+─────────────────────────
+
+What: Number of sentences
+Range: 1-20+ typical
+Use: Complexity assessment
+
+Code:
+```python
+sentences = re.split(r'[.!?]+', content)
+sentence_count = len([s for s in sentences if s.strip()])
+```
+
+Example:
+  "First. Second! Third?" → 3 sentences
+  "Just one sentence." → 1 sentence
+
+
+METRIC 3: avg_sentence_length
+──────────────────────────────
+
+What: Average words per sentence
+Range: 10-30 typical
+Use: Readability assessment
+
+Formula: word_count / sentence_count
+
+Example:
+  100 words, 5 sentences → 20 words/sentence (good)
+  100 words, 2 sentences → 50 words/sentence (complex)
+  100 words, 20 sentences → 5 words/sentence (simple)
+
+
+METRIC 4: has_numerical_data
+─────────────────────────────
+
+What: Contains numbers or percentages
+Type: Boolean
+Use: Filtering quantitative data
+
+Pattern: r'\d'
+
+Examples:
+  "25% increase" → True
+  "Q3 results" → True (Q3 has digit)
+  "No data" → False
+
+
+METRIC 5: has_dates
+────────────────────
+
+What: Contains date references
+Type: Boolean
+Use: Temporal filtering
+
+Patterns:
+  - 12/31/2023
+  - 2023-12-31
+  - December 31, 2023
+
+Examples:
+  "As of 12/31/2023" → True
+  "Recent analysis" → False
+
+
+METRIC 6: has_named_entities
+─────────────────────────────
+
+What: Contains proper nouns (names, places, companies)
+Type: Boolean
+Use: Entity-based filtering
+
+Heuristic: Count capitalized words (simple but effective)
+
+Examples:
+  "Morgan Stanley reported" → True
+  "The company reported" → False (generic)
+
+
+METRIC 7: has_exhibits
+───────────────────────
+
+What: References figures, tables, exhibits
+Type: Boolean
+Use: Visual content filtering
+
+Patterns:
+  - Figure 1
+  - Table 3
+  - Exhibit A
+
+Examples:
+  "See Figure 1 below" → True
+  "The table shows" → False (no specific reference)
+
+
+METRIC 8: has_citations
+────────────────────────
+
+What: Contains source citations
+Type: Boolean
+Use: Credibility filtering
+
+Patterns:
+  - Source:
+  - © Copyright
+  - (Author, 2023)
+  - et al.
+
+Examples:
+  "Source: Morgan Stanley" → True
+  "The analysis shows" → False
+
+
+USING QUALITY METRICS:
+──────────────────────
+
+Filtering examples:
+  "Find chunks with numerical data"
+    → WHERE has_numerical_data = True
+
+  "Find long-form analysis"
+    → WHERE word_count > 300 AND sentence_count > 10
+
+  "Find cited sources"
+    → WHERE has_citations = True
+
+Ranking examples:
+  "Prioritize quantitative chunks"
+    → ORDER BY has_numerical_data DESC, word_count DESC
+
+  "Show comprehensive chunks first"
+    → ORDER BY (word_count * sentence_count) DESC
+
+
+================================================================================
+6. SPECIAL CHUNK TYPES
+================================================================================
+
+TABLE CHUNKS:
+─────────────
+
+Special handling for tables:
+
+chunk = {
+    'id': '...',
+    'text': 'Context: ...\n\n| Col1 | Col2 |\n|-----|-----|\n...',
+    'content_only': '| Col1 | Col2 |...',
+    'metadata': {
+        'type': 'table',  ← Special type
+        'has_numerical_data': True,  ← Usually true for tables
+        'source_attribution': 'Morgan Stanley Research',
+        ...
+    }
+}
+
+Why special?
+  - Tables are atomic (never split)
+  - Often contain numerical data
+  - Need special rendering
+
+
+IMAGE CHUNKS:
+─────────────
+
+Special handling for images:
+
+chunk = {
+    'id': '...',
+    'text': 'Context: ...\n\n**Image 1:** Architecture\n![](path/to/image.png)\n*AI Description:* ...',
+    'content_only': '**Image 1:** ...',
+    'metadata': {
+        'type': 'image',  ← Special type
+        'image_path': 'figures/architecture.png',  ← Path to image
+        'has_named_entities': True,  ← Often in descriptions
+        ...
+    }
+}
+
+Why special?
+  - Link to actual image file
+  - AI-generated descriptions
+  - Visual content
+
+
+CODE CHUNKS:
+────────────
+
+Special handling for code:
+
+chunk = {
+    'id': '...',
+    'text': 'Context: ...\n\n```python\ndef process():\n    ...\n```',
+    'content_only': '```python\n...',
+    'metadata': {
+        'type': 'code',  ← Special type
+        'has_numerical_data': False,  ← Usually no numbers
+        ...
+    }
+}
+
+Why special?
+  - Syntax highlighting
+  - Different search patterns
+  - Language-specific filtering
+
+
+================================================================================
+7. COMMON VALIDATION FAILURES
+================================================================================
+
+FAILURE 1: Empty Content After Processing
+──────────────────────────────────────────
+
+Cause: Text was only whitespace or formatting
+
+Example:
+  Original markdown: "  \n\n  "
+  After extraction: ""
+  Validation: FAIL
+
+Solution: Skip empty sections during parsing
+
+
+FAILURE 2: Missing Metadata
+────────────────────────────
+
+Cause: Incomplete data from extraction
+
+Example:
+  chunk['metadata']['page_number'] missing
+
+Solution: Ensure all metadata populated during chunking
+
+
+FAILURE 3: Oversized Chunks
+────────────────────────────
+
+Cause: Very large table or image block
+
+Example:
+  Table with 5000 characters (exceeds max_size of 2500)
+
+Solution: Accept with warning (tables are atomic)
+
+
+FAILURE 4: Invalid Data Types
+──────────────────────────────
+
+Cause: Type conversion errors
+
+Example:
+  page_number = "5" (string instead of int)
+
+Solution: Ensure proper type casting during extraction
+
+
+================================================================================
+8. DEBUGGING VALIDATION ISSUES
+================================================================================
+
+When validation fails, check logs:
+
+Example log output:
+```
+2026-01-04 16:45:07 | ERROR | Chunk missing required field: content_only
+2026-01-04 16:45:07 | ERROR | Chunk details: {'id': 'abc123', 'text': '...'}
+```
+
+Debug steps:
+1. Identify which check failed
+2. Examine chunk structure
+3. Trace back to source (which parsing step?)
+4. Fix issue in parsing logic
+
+
+Validation statistics help:
+```
+Total chunks: 100
+Validation failures: 3
+Failure rate: 3%
+
+Failure reasons:
+  empty_content: 2
+  missing_field: 1
+```
+
+If failure rate > 5%:
+  → Investigate extraction process
+  → Check for malformed input
+
+
+================================================================================
+9. SUMMARY - Quick Reference
+================================================================================
+
+CHUNK CREATION STEPS:
+─────────────────────
+1. Clean content (strip whitespace)
+2. Build hierarchical context
+3. Inject context into text
+4. Extract quality metrics
+5. Extract source attribution
+6. Generate unique ID (MD5 hash)
+7. Assemble complete chunk object
+8. Return chunk
+
+
+VALIDATION CHECKS:
+──────────────────
+1. ✓ Required fields exist
+2. ✓ Metadata fields exist
+3. ✓ Content not empty
+4. ✓ Reasonable size (warning if over threshold)
+5. ✓ Valid data types
+
+
+QUALITY METRICS:
+────────────────
+✓ word_count - Filtering by length
+✓ sentence_count - Complexity assessment
+✓ avg_sentence_length - Readability
+✓ has_numerical_data - Quantitative filtering
+✓ has_dates - Temporal filtering
+✓ has_named_entities - Entity filtering
+✓ has_exhibits - Visual content
+✓ has_citations - Credibility
+
+
+CONTEXT INJECTION:
+──────────────────
+Format: "Context: Level1 > Level2 > Level3\n\n[original content]"
+Purpose: Better embeddings, better retrieval, better answers
+
+
+SPECIAL TYPES:
+──────────────
+• table - Structured data, atomic
+• image - Visual content with descriptions
+• code - Syntax and language info
+• text - Regular content (default)
+
+
+================================================================================
+END OF CHUNK CREATION & VALIDATION GUIDE
+================================================================================
+
+Use this guide to understand how raw content becomes rich, validated,
+context-aware chunks ready for vector database storage and RAG retrieval.
