@@ -33,7 +33,7 @@ Usage:
     - RANDOM_SEED: For reproducible datasets
 
 Example:
-    >>> python generate_synthetic_customers_orders.py
+    generate_synthetic_customers_orders.py
     Generating 200 customers and 2000 orders...
     Files created:
      - datasets/customers.csv
@@ -156,7 +156,7 @@ def gen_customer_name():
         str: Full customer name (e.g., "Rahul Kumar" or "John Smith")
 
     Example:
-        >>> gen_customer_name()
+        gen_customer_name()
         "Priya Sharma"
     """
     if fake:
@@ -185,7 +185,7 @@ def gen_email(name, idx):
         str: Email address (e.g., "prudhvi.akella.1@mail.com")
 
     Example:
-        >>> gen_email("Rahul Kumar", 42)
+        gen_email("Rahul Kumar", 42)
         "rahul.kumar.42@example.com"
 
     Note:
@@ -217,7 +217,7 @@ def gen_city_state():
             state - State code (2-letter abbreviation)
 
     Example:
-        >>> gen_city_state()
+        gen_city_state()
         ("Hyderabad", "TG")
 
     Note:
@@ -262,9 +262,9 @@ def random_datetime_between(start: datetime, end: datetime) -> datetime:
         datetime: Random datetime in range [start, end)
 
     Example:
-        >>> start = datetime(2023, 1, 1)
-        >>> end = datetime(2023, 12, 31)
-        >>> random_datetime_between(start, end)
+        start = datetime(2023, 1, 1)
+        end = datetime(2023, 12, 31)
+        random_datetime_between(start, end)
         datetime.datetime(2023, 7, 15, 14, 23, 45)
 
     Raises:
@@ -297,8 +297,8 @@ def fmt_dt(dt: datetime) -> str:
         str: Formatted timestamp string
 
     Example:
-        >>> from datetime import datetime
-        >>> fmt_dt(datetime(2024, 12, 11, 15, 30, 45))
+        from datetime import datetime
+        fmt_dt(datetime(2024, 12, 11, 15, 30, 45))
         "2024-12-11 15:30:45"
     """
     return dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -337,10 +337,10 @@ def generate_customers(num_customers: int):
         4. All fields populated (no nulls)
 
     Example:
-        >>> customers = generate_customers(3)
-        >>> len(customers)
+        customers = generate_customers(3)
+        len(customers)
         3
-        >>> customers[0].keys()
+        customers[0].keys()
         dict_keys(['customer_id', 'customer_name', 'email', 'city', 'state', 'created_at'])
     """
     customers = []  # Initialize empty list to store customer records
@@ -417,11 +417,11 @@ def generate_orders(customers, num_orders: int):
         5. Total amount always positive, 2 decimal precision
 
     Example:
-        >>> customers = generate_customers(10)
-        >>> orders = generate_orders(customers, 50)
-        >>> len(orders)
+        customers = generate_customers(10)
+        orders = generate_orders(customers, 50)
+        len(orders)
         50
-        >>> all(o['customer_id'] in [c['customer_id'] for c in customers] for o in orders)
+        all(o['customer_id'] in [c['customer_id'] for c in customers] for o in orders)
         True
     """
     orders = []  # Initialize empty list for order records
@@ -515,8 +515,8 @@ def write_csv_customers(path: str, customers):
         IOError: If file cannot be written (permissions, disk space, etc.)
 
     Example:
-        >>> customers = generate_customers(5)
-        >>> write_csv_customers("output/customers.csv", customers)
+        customers = generate_customers(5)
+        write_csv_customers("output/customers.csv", customers)
         # Creates file with 6 lines (1 header + 5 data rows)
     """
     # Define column order for CSV header
@@ -562,8 +562,8 @@ def write_csv_orders(path: str, orders):
         IOError: If file cannot be written (permissions, disk space, etc.)
 
     Example:
-        >>> orders = generate_orders(customers, 20)
-        >>> write_csv_orders("output/orders.csv", orders)
+        orders = generate_orders(customers, 20)
+        write_csv_orders("output/orders.csv", orders)
         # Creates file with 21 lines (1 header + 20 data rows)
     """
     # Define column order for CSV header
