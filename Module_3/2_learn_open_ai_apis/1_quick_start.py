@@ -16,14 +16,11 @@ The examples in this file demonstrate:
 """
 
 import os
-from dotenv import load_dotenv
 from openai import OpenAI
 
-# Load API key from .env file
-load_dotenv()
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI()
 
 
 def ask_ai(prompt: str, model: str = "gpt-4o") -> str:
@@ -42,9 +39,14 @@ def ask_ai(prompt: str, model: str = "gpt-4o") -> str:
             model=model,
             messages=[
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            n=2
         )
-        
+        print("\nAI's response:",response)
+        for id,choice in enumerate(response.choices):
+            print("#"*15)
+            print("choice id:",id+1,"Message:",choice.message.content)
+            print("#" * 15)
         return response.choices[0].message.content
         
     except Exception as e:
@@ -66,41 +68,41 @@ if __name__ == "__main__":
     response = ask_ai("What is machine learning? Explain in 2 sentences.")
     print(response)
     
-    # Example 2: Classification
-    print("\n\nExample 2: Text Classification")
-    print("-" * 70)
-    prompt = """
-    Classify this review as POSITIVE, NEGATIVE, or NEUTRAL:
-    "The product works but arrived 2 weeks late. Quality is good though."
-    
-    Answer with just the classification.
-    """
-    response = ask_ai(prompt)
-    print(response)
-    
-    # Example 3: Content Generation
-    print("\n\nExample 3: Content Generation")
-    print("-" * 70)
-    prompt = """
-    Write a professional email to a customer apologizing for delayed shipping.
-    Keep it under 100 words. Customer name: John. Order #12345.
-    """
-    response = ask_ai(prompt)
-    print(response)
-    
-    # Example 4: Data Extraction
-    print("\n\nExample 4: Data Extraction")
-    print("-" * 70)
-    prompt = """
-    Extract the following from this text and format as JSON:
-    - Product name
-    - Price
-    - Color
-    
-    Text: "I bought the UltraWidget Pro in blue color for $299.99"
-    """
-    response = ask_ai(prompt)
-    print(response)
+    # # Example 2: Classification
+    # print("\n\nExample 2: Text Classification")
+    # print("-" * 70)
+    # prompt = """
+    # Classify this review as POSITIVE, NEGATIVE, or NEUTRAL:
+    # "The product works but arrived 2 weeks late. Quality is good though."
+    #
+    # Answer with just the classification.
+    # """
+    # response = ask_ai(prompt)
+    # print(response)
+    #
+    # # Example 3: Content Generation
+    # print("\n\nExample 3: Content Generation")
+    # print("-" * 70)
+    # prompt = """
+    # Write a professional email to a customer apologizing for delayed shipping.
+    # Keep it under 100 words. Customer name: John. Order #12345.
+    # """
+    # response = ask_ai(prompt)
+    # print(response)
+    #
+    # # Example 4: Data Extraction
+    # print("\n\nExample 4: Data Extraction")
+    # print("-" * 70)
+    # prompt = """
+    # Extract the following from this text and format as JSON:
+    # - Product name
+    # - Price
+    # - Color
+    #
+    # Text: "I bought the UltraWidget Pro in blue color for $299.99"
+    # """
+    # response = ask_ai(prompt)
+    # print(response)
     
     print("\n" + "-"*70)
     print("Quick start completed! Now try your own prompts.")
