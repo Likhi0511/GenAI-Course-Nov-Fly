@@ -417,9 +417,9 @@ class DoclingSmartV2:
 
         EXAMPLE:
         --------
-        >>> extractor = DoclingSmartV2()
-        >>> extractor.extract("/path/to/document.pdf")
-        >>> extractor.extract("/path/to/pdf_folder/")
+            extractor = DoclingSmartV2()
+            extractor.extract("/path/to/document.pdf")
+            extractor.extract("/path/to/pdf_folder/")
         """
         input_path = Path(input_path)
 

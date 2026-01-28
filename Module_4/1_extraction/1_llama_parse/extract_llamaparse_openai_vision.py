@@ -298,6 +298,7 @@ class LlamaParseUltimateExtractor:
             print("\n[STAGE 1/5] LlamaParse text extraction...")
             try:
                 docs = self.parser.load_data(str(pdf_path))
+                print(docs)
                 print(f"  SUCCESS: Extracted {len(docs)} pages")
 
                 # If LlamaParse returns 0 pages, use PyMuPDF fallback
@@ -320,12 +321,13 @@ class LlamaParseUltimateExtractor:
             print("\n[STAGE 2/5] PyMuPDF image extraction...")
             try:
                 page_images = self._extract_images_pymupdf(pdf_path, output_dir)
+                print(page_images)
                 total_imgs = sum(len(imgs) for imgs in page_images.values())
                 print(f"  SUCCESS: Extracted {total_imgs} images")
             except Exception as e:
                 print(f"  WARNING: Image extraction failed: {e}")
                 page_images = {}
-
+            #
             # STAGE 3: AI Analysis
             print("\n[STAGE 3/5] AI analysis (images + tables)...")
             if page_images:
@@ -334,7 +336,7 @@ class LlamaParseUltimateExtractor:
                     print(f"  SUCCESS: Generated AI descriptions")
                 except Exception as e:
                     print(f"  WARNING: Description generation failed: {e}")
-
+            print("After open ai desc generation",page_images)
             # STAGE 4: Generate Page-by-Page MD Files
             print("\n[STAGE 4/5] Generating page Markdown files...")
             try:
@@ -610,7 +612,19 @@ class LlamaParseUltimateExtractor:
                             active_breadcrumbs = active_breadcrumbs[:1] + [text]
                         elif level == 3:
                             active_breadcrumbs = active_breadcrumbs[:2] + [text]
-
+                """
+                | 135.0 |     | MSCI World |     | Stocks With Both AI Materiality & Exposure Increased (June Survey) |     |     |     |     |     |     |     |
+                | ----- | --- | ---------- | --- | ------------------------------------------------------------------ | --- | --- | --- | --- | --- | --- | --- |
+                | 130.0 |     |            |     |                                                                    |     |     |     |     |     |     |     |
+                | 125.0 |     |            |     |                                                                    |     |     |     |     |     |     |     |
+                | 120.0 |     |            |     |                                                                    |     |     |     |     |     |     |     |
+                | 115.0 |     |            |     |                                                                    |     |     |     |     |     |     |     |
+                Iter 1: 
+                    line = | 135.0 |     | MSCI World |     | Stocks With Both AI Materiality & Exposure Increased (June Survey) |     |     |     |     |     |     |     |
+                    table_buffer = ["| 135.0 |     | MSCI World |     | Stocks With Both AI Materiality & Exposure Increased (June Survey) |     |     |     |     |     |     |     |]
+                Iter 2: 
+                    
+                """
                 # Detect tables (markdown tables have | separators)
                 if '|' in line and len(line.strip()) > 3:
                     if not in_table:
