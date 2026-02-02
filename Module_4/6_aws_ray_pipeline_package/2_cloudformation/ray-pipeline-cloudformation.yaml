@@ -1,0 +1,1065 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Ray Document Processing Pipeline - Complete Infrastructure'
+
+# ==============================================================================
+# PARAMETERS
+# ==============================================================================
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: production
+    Description: Environment name (production, staging, development)
+    AllowedValues:
+      - production
+      - staging
+      - development
+  
+  ProjectName:
+    Type: String
+    Default: ray-document-pipeline
+    Description: Project name used for resource naming
+  
+  S3BucketName:
+    Type: String
+    Description: Unique S3 bucket name for document storage
+    AllowedPattern: ^[a-z0-9][a-z0-9-]*[a-z0-9]$
+    ConstraintDescription: Bucket name must be lowercase, numbers, and hyphens only
+  
+  OpenAIApiKeySecretArn:
+    Type: String
+    Description: ARN of AWS Secrets Manager secret containing OpenAI API key
+    Default: ''
+  
+  PineconeApiKeySecretArn:
+    Type: String
+    Description: ARN of AWS Secrets Manager secret containing Pinecone API key
+    Default: ''
+  
+  RayDockerImageUri:
+    Type: String
+    Description: ECR URI for Ray pipeline Docker image (leave empty to create ECR repo)
+    Default: ''
+  
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for VPC
+  
+  PublicSubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for public subnet
+  
+  PrivateSubnetCIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for private subnet
+  
+  RayHeadCPU:
+    Type: Number
+    Default: 2048
+    Description: CPU units for Ray head node (1024 = 1 vCPU)
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+  
+  RayHeadMemory:
+    Type: Number
+    Default: 8192
+    Description: Memory (MB) for Ray head node
+    AllowedValues: [512, 1024, 2048, 4096, 8192, 16384]
+  
+  RayWorkerCPU:
+    Type: Number
+    Default: 1024
+    Description: CPU units for Ray worker nodes
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+  
+  RayWorkerMemory:
+    Type: Number
+    Default: 4096
+    Description: Memory (MB) for Ray worker nodes
+    AllowedValues: [512, 1024, 2048, 4096, 8192]
+  
+  MinWorkers:
+    Type: Number
+    Default: 1
+    Description: Minimum number of Ray worker tasks
+    MinValue: 0
+    MaxValue: 100
+  
+  MaxWorkers:
+    Type: Number
+    Default: 3
+    Description: Maximum number of Ray worker tasks
+    MinValue: 1
+    MaxValue: 100
+  
+  NotificationEmail:
+    Type: String
+    Description: Email address for CloudWatch alarms
+    Default: ''
+
+# ==============================================================================
+# CONDITIONS
+# ==============================================================================
+
+Conditions:
+  CreateECRRepository: !Equals [!Ref RayDockerImageUri, '']
+  CreateSecrets: !And
+    - !Equals [!Ref OpenAIApiKeySecretArn, '']
+    - !Equals [!Ref PineconeApiKeySecretArn, '']
+  EnableNotifications: !Not [!Equals [!Ref NotificationEmail, '']]
+
+# ==============================================================================
+# RESOURCES
+# ==============================================================================
+
+Resources:
+
+  # ============================================================================
+  # VPC AND NETWORKING
+  # ============================================================================
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-vpc
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-igw
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-subnet
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetCIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-subnet
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-nat-eip
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-nat
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-public-routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-private-routes
+
+  DefaultPrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet
+
+  # ============================================================================
+  # SECURITY GROUPS
+  # ============================================================================
+
+  RayClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${ProjectName}-ray-cluster-sg
+      GroupDescription: Security group for Ray cluster
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+          Description: Ray GCS port
+        - IpProtocol: tcp
+          FromPort: 8265
+          ToPort: 8265
+          CidrIp: 0.0.0.0/0
+          Description: Ray Dashboard
+        - IpProtocol: tcp
+          FromPort: 10001
+          ToPort: 10001
+          SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+          Description: Ray Client port
+        - IpProtocol: -1
+          SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+          Description: Allow all traffic within security group
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ray-cluster-sg
+
+  # ============================================================================
+  # S3 BUCKET
+  # ============================================================================
+
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: InputFilesLifecycle
+            Status: Enabled
+            Prefix: input/
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: INTELLIGENT_TIERING
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 365
+          - Id: ProcessedFilesLifecycle
+            Status: Enabled
+            Prefix: extracted/
+            Transitions:
+              - TransitionInDays: 7
+                StorageClass: INTELLIGENT_TIERING
+              - TransitionInDays: 30
+                StorageClass: GLACIER
+            ExpirationInDays: 90
+          - Id: ChunksLifecycle
+            Status: Enabled
+            Prefix: chunks/
+            Transitions:
+              - TransitionInDays: 7
+                StorageClass: INTELLIGENT_TIERING
+              - TransitionInDays: 30
+                StorageClass: GLACIER
+            ExpirationInDays: 90
+          - Id: EnrichedLifecycle
+            Status: Enabled
+            Prefix: enriched/
+            Transitions:
+              - TransitionInDays: 7
+                StorageClass: INTELLIGENT_TIERING
+              - TransitionInDays: 30
+                StorageClass: GLACIER
+            ExpirationInDays: 90
+          - Id: EmbeddingsLifecycle
+            Status: Enabled
+            Prefix: embeddings/
+            Transitions:
+              - TransitionInDays: 7
+                StorageClass: INTELLIGENT_TIERING
+          - Id: ErrorsLifecycle
+            Status: Enabled
+            Prefix: errors/
+            Transitions:
+              - TransitionInDays: 1
+                StorageClass: INTELLIGENT_TIERING
+              - TransitionInDays: 7
+                StorageClass: GLACIER
+            ExpirationInDays: 180
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt S3EventLambdaFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: input/
+                  - Name: suffix
+                    Value: .pdf
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-documents
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # ============================================================================
+  # DYNAMODB TABLES
+  # ============================================================================
+
+  ControlTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${ProjectName}-control
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: processing_version
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: current_stage
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+        - AttributeName: processing_version
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: stage-status-index
+          KeySchema:
+            - AttributeName: current_stage
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-control
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${ProjectName}-audit
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-audit
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  MetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${ProjectName}-metrics
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: metric_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: date
+          KeyType: HASH
+        - AttributeName: metric_type
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-metrics
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # ============================================================================
+  # SECRETS MANAGER (OPTIONAL)
+  # ============================================================================
+
+  OpenAIApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: CreateSecrets
+    Properties:
+      Name: !Sub ${ProjectName}-openai-api-key
+      Description: OpenAI API key for document pipeline
+      SecretString: '{"OPENAI_API_KEY":"PLACEHOLDER_REPLACE_AFTER_CREATION"}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-openai-secret
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  PineconeApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: CreateSecrets
+    Properties:
+      Name: !Sub ${ProjectName}-pinecone-api-key
+      Description: Pinecone API key for document pipeline
+      SecretString: '{"PINECONE_API_KEY":"PLACEHOLDER_REPLACE_AFTER_CREATION"}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pinecone-secret
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  # ============================================================================
+  # IAM ROLES
+  # ============================================================================
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-lambda-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DocumentBucket.Arn
+                  - !Sub ${DocumentBucket.Arn}/*
+        - PolicyName: DynamoDBWriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt ControlTable.Arn
+                  - !GetAtt AuditTable.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-lambda-role
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !If
+                    - CreateSecrets
+                    - !Ref OpenAIApiKeySecret
+                    - !Ref OpenAIApiKeySecretArn
+                  - !If
+                    - CreateSecrets
+                    - !Ref PineconeApiKeySecret
+                    - !Ref PineconeApiKeySecretArn
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ecs-execution-role
+
+  RayTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-ray-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3FullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DocumentBucket.Arn
+                  - !Sub ${DocumentBucket.Arn}/*
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt ControlTable.Arn
+                  - !Sub ${ControlTable.Arn}/index/*
+                  - !GetAtt AuditTable.Arn
+                  - !GetAtt MetricsTable.Arn
+        - PolicyName: ComprehendAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - comprehend:DetectEntities
+                  - comprehend:DetectKeyPhrases
+                  - comprehend:DetectSentiment
+                Resource: '*'
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !If
+                    - CreateSecrets
+                    - !Ref OpenAIApiKeySecret
+                    - !Ref OpenAIApiKeySecretArn
+                  - !If
+                    - CreateSecrets
+                    - !Ref PineconeApiKeySecret
+                    - !Ref PineconeApiKeySecretArn
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ray-task-role
+
+  # ============================================================================
+  # LAMBDA FUNCTION
+  # ============================================================================
+
+  S3EventLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-s3-event-handler
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          CONTROL_TABLE_NAME: !Ref ControlTable
+          AUDIT_TABLE_NAME: !Ref AuditTable
+          AWS_REGION: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          from datetime import datetime
+          import uuid
+          import os
+
+          dynamodb = boto3.resource('dynamodb')
+          control_table = dynamodb.Table(os.environ['CONTROL_TABLE_NAME'])
+          audit_table = dynamodb.Table(os.environ['AUDIT_TABLE_NAME'])
+
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+              
+              processed_count = 0
+              
+              for record in event['Records']:
+                  try:
+                      bucket = record['s3']['bucket']['name']
+                      key = record['s3']['object']['key']
+                      size = record['s3']['object']['size']
+                      
+                      if not key.startswith('input/') or not key.lower().endswith('.pdf'):
+                          continue
+                      
+                      timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                      unique_id = uuid.uuid4().hex[:8]
+                      document_id = f"doc_{timestamp}_{unique_id}"
+                      current_time = datetime.utcnow().isoformat() + 'Z'
+                      
+                      control_table.put_item(
+                          Item={
+                              'document_id': document_id,
+                              'processing_version': 'v1',
+                              'source_s3_key': key,
+                              'source_bucket': bucket,
+                              'file_size_bytes': size,
+                              'upload_timestamp': current_time,
+                              'status': 'PENDING',
+                              'current_stage': 'extraction',
+                              'created_at': current_time,
+                              'updated_at': current_time,
+                              'stage_status': {
+                                  'extraction': {'status': 'PENDING'},
+                                  'chunking': {'status': 'PENDING'},
+                                  'enrichment': {'status': 'PENDING'},
+                                  'embedding': {'status': 'PENDING'},
+                                  'loading': {'status': 'PENDING'}
+                              },
+                              'retry_count': 0,
+                              'max_retries': 3,
+                              'ttl': int(datetime.utcnow().timestamp()) + (90 * 24 * 3600)
+                          }
+                      )
+                      
+                      audit_table.put_item(
+                          Item={
+                              'document_id': document_id,
+                              'timestamp': current_time,
+                              'event_type': 'DOCUMENT_RECEIVED',
+                              'stage': 'ingestion',
+                              'status': 'PENDING',
+                              'processing_version': 'v1',
+                              'metadata': {
+                                  'source': 's3_event',
+                                  'file_size': size,
+                                  'bucket': bucket,
+                                  'key': key
+                              },
+                              'ttl': int(datetime.utcnow().timestamp()) + (180 * 24 * 3600)
+                          }
+                      )
+                      
+                      print(f"Created control record: {document_id}")
+                      processed_count += 1
+                      
+                  except Exception as e:
+                      print(f"Error processing {key}: {str(e)}")
+              
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'message': 'Processing initiated',
+                      'processed': processed_count
+                  })
+              }
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-s3-handler
+
+  S3InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref S3EventLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentBucket.Arn
+
+  # ============================================================================
+  # ECR REPOSITORY (OPTIONAL)
+  # ============================================================================
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Condition: CreateECRRepository
+    Properties:
+      RepositoryName: !Sub ${ProjectName}-ray
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-ray-ecr
+
+  # ============================================================================
+  # ECS CLUSTER
+  # ============================================================================
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ProjectName}-cluster
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-cluster
+
+  # ============================================================================
+  # CLOUDWATCH LOG GROUPS
+  # ============================================================================
+
+  RayHeadLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ProjectName}-ray-head
+      RetentionInDays: 7
+
+  RayWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ProjectName}-ray-worker
+      RetentionInDays: 7
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ProjectName}-s3-event-handler
+      RetentionInDays: 7
+
+  # ============================================================================
+  # ECS TASK DEFINITIONS
+  # ============================================================================
+
+  RayHeadTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-ray-head
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref RayHeadCPU
+      Memory: !Ref RayHeadMemory
+      TaskRoleArn: !GetAtt RayTaskRole.Arn
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: ray-head
+          Image: !If
+            - CreateECRRepository
+            - !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:latest
+            - !Ref RayDockerImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 6379
+              Protocol: tcp
+            - ContainerPort: 8265
+              Protocol: tcp
+            - ContainerPort: 10001
+              Protocol: tcp
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: S3_BUCKET
+              Value: !Ref DocumentBucket
+            - Name: DYNAMODB_CONTROL_TABLE
+              Value: !Ref ControlTable
+            - Name: DYNAMODB_AUDIT_TABLE
+              Value: !Ref AuditTable
+            - Name: DYNAMODB_METRICS_TABLE
+              Value: !Ref MetricsTable
+            - Name: RAY_ADDRESS
+              Value: auto
+          Secrets:
+            - Name: OPENAI_API_KEY
+              ValueFrom: !If
+                - CreateSecrets
+                - !Sub ${OpenAIApiKeySecret}:OPENAI_API_KEY::
+                - !Sub ${OpenAIApiKeySecretArn}:OPENAI_API_KEY::
+            - Name: PINECONE_API_KEY
+              ValueFrom: !If
+                - CreateSecrets
+                - !Sub ${PineconeApiKeySecret}:PINECONE_API_KEY::
+                - !Sub ${PineconeApiKeySecretArn}:PINECONE_API_KEY::
+          Command:
+            - ray
+            - start
+            - --head
+            - --port=6379
+            - --dashboard-host=0.0.0.0
+            - --dashboard-port=8265
+            - --block
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RayHeadLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ray-head
+
+  RayWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-ray-worker
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref RayWorkerCPU
+      Memory: !Ref RayWorkerMemory
+      TaskRoleArn: !GetAtt RayTaskRole.Arn
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: ray-worker
+          Image: !If
+            - CreateECRRepository
+            - !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:latest
+            - !Ref RayDockerImageUri
+          Essential: true
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: S3_BUCKET
+              Value: !Ref DocumentBucket
+            - Name: DYNAMODB_CONTROL_TABLE
+              Value: !Ref ControlTable
+            - Name: DYNAMODB_AUDIT_TABLE
+              Value: !Ref AuditTable
+          Secrets:
+            - Name: OPENAI_API_KEY
+              ValueFrom: !If
+                - CreateSecrets
+                - !Sub ${OpenAIApiKeySecret}:OPENAI_API_KEY::
+                - !Sub ${OpenAIApiKeySecretArn}:OPENAI_API_KEY::
+            - Name: PINECONE_API_KEY
+              ValueFrom: !If
+                - CreateSecrets
+                - !Sub ${PineconeApiKeySecret}:PINECONE_API_KEY::
+                - !Sub ${PineconeApiKeySecretArn}:PINECONE_API_KEY::
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RayWorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ray-worker
+
+  # ============================================================================
+  # SNS TOPIC FOR ALARMS (OPTIONAL)
+  # ============================================================================
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: EnableNotifications
+    Properties:
+      TopicName: !Sub ${ProjectName}-alarms
+      DisplayName: Pipeline Alarms
+      Subscription:
+        - Endpoint: !Ref NotificationEmail
+          Protocol: email
+
+  # ============================================================================
+  # CLOUDWATCH ALARMS
+  # ============================================================================
+
+  HighFailureRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: EnableNotifications
+    Properties:
+      AlarmName: !Sub ${ProjectName}-high-failure-rate
+      AlarmDescription: Alert when document failure rate is high
+      MetricName: DocumentsFailed
+      Namespace: DocumentPipeline
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlarmTopic
+      TreatMissingData: notBreaching
+
+# ==============================================================================
+# OUTPUTS
+# ==============================================================================
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-VPCId
+
+  PublicSubnetId:
+    Description: Public Subnet ID
+    Value: !Ref PublicSubnet
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetId
+
+  PrivateSubnetId:
+    Description: Private Subnet ID
+    Value: !Ref PrivateSubnet
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnetId
+
+  S3BucketName:
+    Description: S3 Bucket for documents
+    Value: !Ref DocumentBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-S3Bucket
+
+  ControlTableName:
+    Description: DynamoDB Control Table
+    Value: !Ref ControlTable
+    Export:
+      Name: !Sub ${AWS::StackName}-ControlTable
+
+  AuditTableName:
+    Description: DynamoDB Audit Table
+    Value: !Ref AuditTable
+    Export:
+      Name: !Sub ${AWS::StackName}-AuditTable
+
+  MetricsTableName:
+    Description: DynamoDB Metrics Table
+    Value: !Ref MetricsTable
+    Export:
+      Name: !Sub ${AWS::StackName}-MetricsTable
+
+  ECRRepositoryUri:
+    Condition: CreateECRRepository
+    Description: ECR Repository URI
+    Value: !GetAtt ECRRepository.RepositoryUri
+    Export:
+      Name: !Sub ${AWS::StackName}-ECRRepository
+
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub ${AWS::StackName}-ECSCluster
+
+  RayHeadTaskDefinitionArn:
+    Description: Ray Head Task Definition ARN
+    Value: !Ref RayHeadTaskDefinition
+    Export:
+      Name: !Sub ${AWS::StackName}-RayHeadTaskDef
+
+  RayWorkerTaskDefinitionArn:
+    Description: Ray Worker Task Definition ARN
+    Value: !Ref RayWorkerTaskDefinition
+    Export:
+      Name: !Sub ${AWS::StackName}-RayWorkerTaskDef
+
+  LambdaFunctionArn:
+    Description: S3 Event Lambda Function ARN
+    Value: !GetAtt S3EventLambdaFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-LambdaFunction
+
+  RayClusterSecurityGroupId:
+    Description: Security Group for Ray Cluster
+    Value: !Ref RayClusterSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-RaySecurityGroup

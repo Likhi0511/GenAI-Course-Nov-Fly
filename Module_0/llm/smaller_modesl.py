@@ -1,7 +1,7 @@
 """
 COMPLETE ML TRAINING PIPELINE DEMONSTRATION
 ============================================
-Full deployment system showing Pretrained → SFT → RL progression
+Full 3_deployment system showing Pretrained → SFT → RL progression
 With multiple model family options and comprehensive testing
 
 Author: Training Pipeline Demo
@@ -227,7 +227,7 @@ class ComprehensiveModelFamilies:
         }
 
 class MLPipelineDeployment:
-    """Main deployment and testing system"""
+    """Main 3_deployment and testing system"""
 
     def __init__(self):
         self.families = ComprehensiveModelFamilies()
@@ -285,7 +285,7 @@ class MLPipelineDeployment:
         print("\n" + "=" * 60)
         print("Recommendations:")
         print("  • For best demonstration: Choose 1 (GPT-2 Family)")
-        print("  • For fastest deployment: Choose 6 (Tiny Models)")
+        print("  • For fastest 3_deployment: Choose 6 (Tiny Models)")
         print("  • For instruction tuning: Choose 4 (FLAN-T5)")
 
         while True:
@@ -413,7 +413,7 @@ class MLPipelineDeployment:
         print(f"Total cost: ${total_cost:.2f}/hour")
         print(f"Models to deploy: 3")
 
-        confirm = input("\nProceed with deployment? (y/n): ").strip().lower()
+        confirm = input("\nProceed with 3_deployment? (y/n): ").strip().lower()
         if confirm not in ['y', 'yes']:
             print("❌ Deployment cancelled")
             return False
@@ -433,7 +433,7 @@ class MLPipelineDeployment:
                 # Wait between deployments
                 if stage != "rl":
                     wait_time = 20
-                    print(f"\n⏳ Waiting {wait_time}s before next deployment...")
+                    print(f"\n⏳ Waiting {wait_time}s before next 3_deployment...")
                     for j in range(wait_time, 0, -5):
                         print(f"   {j} seconds...", end='\r')
                         time.sleep(5)
@@ -802,7 +802,7 @@ class MLPipelineDeployment:
                 print("❌ Invalid choice")
 
 class QuickDeploy:
-    """Quick deployment option for testing"""
+    """Quick 3_deployment option for testing"""
 
     @staticmethod
     def deploy_minimal_pipeline():
@@ -894,7 +894,7 @@ def main():
     choice = input("\nChoice (1-4): ").strip()
 
     if choice == "1":
-        # Full deployment
+        # Full 3_deployment
         pipeline.check_and_cleanup_existing()
 
         if pipeline.select_model_family():

@@ -1,0 +1,66 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "production"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "ray-document-pipeline"
+  },
+  {
+    "ParameterKey": "S3BucketName",
+    "ParameterValue": "my-document-pipeline-prod-12345"
+  },
+  {
+    "ParameterKey": "OpenAIApiKeySecretArn",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "PineconeApiKeySecretArn",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "RayDockerImageUri",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "VpcCIDR",
+    "ParameterValue": "10.0.0.0/16"
+  },
+  {
+    "ParameterKey": "PublicSubnetCIDR",
+    "ParameterValue": "10.0.1.0/24"
+  },
+  {
+    "ParameterKey": "PrivateSubnetCIDR",
+    "ParameterValue": "10.0.2.0/24"
+  },
+  {
+    "ParameterKey": "RayHeadCPU",
+    "ParameterValue": "2048"
+  },
+  {
+    "ParameterKey": "RayHeadMemory",
+    "ParameterValue": "8192"
+  },
+  {
+    "ParameterKey": "RayWorkerCPU",
+    "ParameterValue": "1024"
+  },
+  {
+    "ParameterKey": "RayWorkerMemory",
+    "ParameterValue": "4096"
+  },
+  {
+    "ParameterKey": "MinWorkers",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "MaxWorkers",
+    "ParameterValue": "10"
+  },
+  {
+    "ParameterKey": "NotificationEmail",
+    "ParameterValue": "prudhvi.akella@example.com"
+  }
+]

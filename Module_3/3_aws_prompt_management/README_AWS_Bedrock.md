@@ -17,7 +17,7 @@ PROMPT_3 = "Analyze {{text}}..."  # In file3.py
 
 # Issues:
 # - No version control for prompts
-# - Changes require code deployment
+# - Changes require code 3_deployment
 # - No rollback capability
 # - Hard to share across teams
 # - No governance or approval workflow

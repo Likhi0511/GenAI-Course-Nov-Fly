@@ -4,7 +4,7 @@
 # E-Commerce Product Onboarding System - Automated Deployment Script
 ################################################################################
 #
-# This script automates the complete deployment of the product onboarding system
+# This script automates the complete 3_deployment of the product onboarding system
 #
 # Usage:
 #   chmod +x deploy.sh
@@ -373,7 +373,7 @@ create_lambda_functions() {
     # Similar for other Lambdas...
 }
 
-# Main deployment
+# Main 3_deployment
 main() {
     echo ""
     echo "╔════════════════════════════════════════════════════════════════╗"

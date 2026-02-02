@@ -162,7 +162,7 @@ class ModelDeployer:
             print(f"✓ Endpoint created: {endpoint.name}")
             print(f"  Status: {endpoint.status}")
 
-            # Option to wait for deployment
+            # Option to wait for 3_deployment
             wait = input("\nWait for endpoint to be ready? (y/n): ").lower()
             if wait == 'y':
                 print("Waiting (this may take 5-10 minutes)...")
@@ -204,7 +204,7 @@ class ModelDeployer:
 
             # Add delay between deployments
             if model_name != models[-1]:
-                print("\nWaiting 30 seconds before next deployment...")
+                print("\nWaiting 30 seconds before next 3_deployment...")
                 time.sleep(30)
 
         # Summary

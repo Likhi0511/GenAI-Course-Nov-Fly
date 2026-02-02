@@ -599,7 +599,7 @@ aws lambda add-permission \
 ## Step 8: Deploy API Gateway
 
 ```bash
-aws apigateway create-deployment \
+aws apigateway create-3_deployment \
   --rest-api-id $API_ID \
   --stage-name prod \
   --region $AWS_REGION

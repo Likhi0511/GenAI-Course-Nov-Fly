@@ -256,6 +256,60 @@ class DoclingSmartV2:
     _handle_visual(item, ...) : Extracts and analyzes visual elements
     _describe_image(path) : AI-powered image description
     _save_meta(out_dir, pdf_path, pages) : Generates metadata.json
+
+    UNDERLYING ML MODELS (Hugging Face):
+    ------------------------------------
+    Docling uses several deep learning models from Hugging Face for PDF analysis:
+
+    1. **Layout Detection Model**:
+       - Model: ds4sd/docling-layout-v1 or microsoft/layoutlmv3-base
+       - Purpose: Identifies document regions (text blocks, images, tables, headers)
+       - Architecture: Layout-aware transformer (LayoutLMv3-based)
+       - Output: Bounding boxes + element type classification
+       - Size: ~500MB
+
+    2. **Table Structure Recognition Model**:
+       - Model: microsoft/table-transformer-structure-recognition
+       - Alternative: ds4sd/docling-table-v1 (Docling's custom TableFormer)
+       - Purpose: Parses table structure (rows, columns, cells, spanning)
+       - Architecture: DETR-based object detection for table cells
+       - Mode: ACCURATE (high quality) vs FAST (speed optimized)
+       - Output: Structured table representation with cell relationships
+       - Size: ~300-400MB
+
+    3. **OCR Model** (when enabled):
+       - Model: tesseract (system-level) or easyocr
+       - Backend Models: craft_mlt_25k.pth + latin.pth (EasyOCR)
+       - Purpose: Extracts text from images/scanned documents
+       - Note: Disabled in this config (do_ocr=False) as we use embedded text
+       - Size: ~100-200MB per language
+
+    4. **Document Understanding Model**:
+       - Model: ds4sd/docling-document-v1 (proprietary Docling model)
+       - Purpose: Hierarchical structure detection (sections, headers, paragraphs)
+       - Functionality: Determines heading levels and document flow
+       - Output: Semantic document tree with hierarchy levels
+       - Size: ~200-300MB
+
+    MODEL REGISTRY:
+    - Primary source: Hugging Face Hub (huggingface.co/ds4sd/)
+    - Docling-specific models: ds4sd/* namespace
+    - Microsoft models: microsoft/table-transformer-*
+    - Cache location: ~/.cache/huggingface/hub/
+
+    TOTAL DISK SPACE: ~1.5-2.5GB for complete model suite
+
+    These models are automatically downloaded from Hugging Face on first run
+    and cached locally for subsequent use.
+
+    PERFORMANCE NOTES:
+    - First run requires model downloads (can take 5-10 minutes)
+    - GPU acceleration recommended for large batches (10x+ speedup with CUDA)
+    - Models run on CPU by default (slower but works everywhere)
+    - Table structure model is the most compute-intensive component
+    - Batch processing benefits significantly from GPU acceleration
+    And in the class docstring:
+
     """
 
     def __init__(
@@ -330,11 +384,20 @@ class DoclingSmartV2:
         # Some PDFs misclassify charts as tables - this catches them
         self.pipeline_options.generate_table_images = True
 
+        """
+        OCR stands for Optical Character Recognition - it's a technology that converts images of text (like scanned documents, photos of pages, or PDF images) into machine-readable text data.
+        In your context, the comment indicates that:
+        
+        You're disabling OCR because the documents already have embedded, selectable text
+        Using the embedded text directly is cleaner/more accurate than running OCR
+        OCR is only necessary when dealing with scanned documents or image-based PDFs where the text isn't already digitally encoded
+        """
+
         # Disable OCR - use embedded text for cleaner results
         # OCR is only needed for scanned documents
         self.pipeline_options.do_ocr = False
 
-        # Enable table structure parsing
+        # Enable table structure parsing - extracts tables while preserving rows, columns, and cell relationships
         self.pipeline_options.do_table_structure = True
 
         # Use ACCURATE mode for best quality table extraction
@@ -621,217 +684,569 @@ class DoclingSmartV2:
             print(f"        - Unsupported PDF features")
             print(f"        - PDF encryption/protection")
             raise
-
-        # ----------------------------------------------------------------
-        # STAGE 3: Collect Items by Page
-        # ----------------------------------------------------------------
-        print("   [2/4] Collecting document items...")
-        pages_items = {}
-        item_count = 0
-
-        try:
-            # Iterate through all items in the document
-            # doc.iterate_items() returns (item, hierarchy_level) tuples
-            for item, level in doc.iterate_items():
-                # Skip items without provenance (page location info)
-                if not item.prov:
-                    continue
-
-                # Get page number from first provenance entry
-                # Docling tracks which page(s) each item appears on
-                p_no = item.prov[0].page_no
-
-                # Initialize page list if this is first item on page
-                if p_no not in pages_items:
-                    pages_items[p_no] = []
-
-                # Add item with its hierarchy level
-                pages_items[p_no].append({
-                    "item": item,    # The actual content item
-                    "level": level   # Hierarchy depth (for headers)
-                })
-                item_count += 1
-
-            print(f"      SUCCESS: Collected {item_count} items across {len(pages_items)} pages")
-        except Exception as e:
-            print(f"      FAILED: Item collection error - {str(e)}")
-            raise
-
-        # ----------------------------------------------------------------
-        # STAGE 4: Smart Processing (Per Page)
-        # ----------------------------------------------------------------
-        print("   [3/4] Smart sorting & extracting visuals...")
-        metadata_pages = []
-        global_offset = 0
-        global_breadcrumbs = []
-
-        pages_processed = 0
-        visuals_extracted = 0
-
-        for p_no in sorted(pages_items.keys()):
-            items = pages_items[p_no]
-
-            # ============================================================
-            # SMART REORDERING: Fix Caption Placement
-            # ============================================================
-            # Reorder items so captions appear BEFORE their visuals
-            # Example: [Image, "Exhibit 1"] -> ["Exhibit 1", Image]
-            ordered_items = self._smart_reorder(items)
-
-            # Page-specific collectors
-            page_lines = []        # Text content lines
-            page_images = []       # Image filenames
-            page_tables = []       # Table indicators
-
-            # ============================================================
-            # BREADCRUMB CONTEXT INJECTION
-            # ============================================================
-            # If we have section context from previous pages, inject it
-            if global_breadcrumbs:
-                context_str = " > ".join(global_breadcrumbs)
-                page_lines.append(f"<!-- Context: {context_str} -->")
-
-            # Page header
-            page_lines.append(f"\n# Page {p_no}\n")
-
-            # ============================================================
-            # PROCESS EACH ITEM ON THE PAGE
-            # ============================================================
-            for entry in ordered_items:
-                item = entry["item"]
-                level = entry["level"]
-
-                # --------------------------------------------------------
-                # SECTION HEADERS: Update Breadcrumbs
-                # --------------------------------------------------------
-                if isinstance(item, SectionHeaderItem):
-                    text = item.text.strip()
-
-                    # Update global breadcrumb hierarchy
-                    # If new header is at same/higher level, clear deeper levels
-                    if len(global_breadcrumbs) >= level:
-                        global_breadcrumbs = global_breadcrumbs[:level-1]
-
-                    # Add new header to breadcrumbs
-                    global_breadcrumbs.append(text)
-
-                    # Output header with appropriate Markdown level
-                    # level+1 because page title is already H1
-                    page_lines.append(f"\n{'#' * (level + 1)} {text}\n")
-
-                # --------------------------------------------------------
-                # TEXT ITEMS: Standard Paragraphs
-                # --------------------------------------------------------
-                elif isinstance(item, TextItem):
-                    text = item.text.strip()
-
-                    # Filter out common boilerplate text
-                    # Customize this list based on your document source
-                    boilerplate = [
-                        "morgan stanley | research",
-                        "source:",
-                        "page"
-                    ]
-
-                    # Skip if text matches boilerplate (case-insensitive)
-                    if text.lower() in boilerplate:
-                        continue
-
-                    # Only include meaningful text (more than single character)
-                    if len(text) > 1:
-                        page_lines.append(text)
-
-                # --------------------------------------------------------
-                # PICTURE ITEMS: Standard Image Extraction
-                # --------------------------------------------------------
-                elif isinstance(item, PictureItem):
-                    success = self._handle_visual(
-                        item, doc, p_no, doc_out_dir,
-                        page_images, page_lines, is_table=False
-                    )
-                    if success:
-                        visuals_extracted += 1
-
-                # --------------------------------------------------------
-                # TABLE ITEMS: Dual Extraction (Text + Image)
-                # --------------------------------------------------------
-                # This is the KEY FIX for missing charts
-                # Some charts are misclassified as tables
-                elif isinstance(item, TableItem):
-                    # Attempt 1: Extract as Text Table
-                    md_table = ""
-                    try:
-                        df = item.export_to_dataframe()
-                        if not df.empty:
-                            md_table = df.to_markdown(index=False)
-                    except Exception as e:
-                        # Table text extraction failed, that's okay
-                        pass
-
-                    # Attempt 2: Extract as Visual (Chart/Graph)
-                    # TableItem can have images if it's actually a chart
-                    img_saved = self._handle_visual(
-                        item, doc, p_no, doc_out_dir,
-                        page_images, page_lines, is_table=True
-                    )
-
-                    if img_saved:
-                        visuals_extracted += 1
-
-                    # If no image was extracted but we have table text, output it
-                    if not img_saved and md_table:
-                        page_lines.append(f"\n{md_table}\n")
-                        page_tables.append("Text Table")
-
-            # ============================================================
-            # SAVE PAGE MARKDOWN FILE
-            # ============================================================
-            final_text = "\n\n".join(page_lines)
-            md_name = f"page_{p_no}.md"
-
-            try:
-                with open(doc_out_dir / "pages" / md_name, "w", encoding="utf-8") as f:
-                    f.write(final_text)
-            except IOError as e:
-                print(f"      ERROR: Failed to write {md_name}: {str(e)}")
-                raise
-
-            # ============================================================
-            # PAGE METADATA
-            # ============================================================
-            metadata_pages.append({
-                "page": p_no,
-                "file": md_name,
-                "breadcrumbs": list(global_breadcrumbs),  # Copy of current state
-                "images": page_images,
-                "tables": len(page_tables),
-                "start": global_offset,
-                "end": global_offset + len(final_text)
-            })
-
-            global_offset += len(final_text)
-            pages_processed += 1
-
-        print(f"      SUCCESS: Processed {pages_processed} pages, extracted {visuals_extracted} visuals")
-
-        # ----------------------------------------------------------------
-        # STAGE 5: Save Metadata
-        # ----------------------------------------------------------------
-        print("   [4/4] Saving metadata...")
-        try:
-            self._save_meta(doc_out_dir, pdf_path, metadata_pages)
-            print(f"      SUCCESS: Metadata saved")
-        except Exception as e:
-            print(f"      FAILED: Metadata save error - {str(e)}")
-            raise
-
-        print(f"\n{'='*70}")
-        print(f"EXTRACTION COMPLETE")
-        print(f"{'='*70}")
-        print(f"Output directory: {doc_out_dir}")
-        print(f"Pages: {pages_processed}")
-        print(f"Visuals: {visuals_extracted}")
-        print(f"{'='*70}\n")
+        print(list(doc.iterate_items())[0])
+        print(list(doc.iterate_items())[1])
+        print(list(doc.iterate_items())[2])
+        print(list(doc.iterate_items())[3])
+        print(list(doc.iterate_items())[4])
+        print(list(doc.iterate_items())[5])
+        print(list(doc.iterate_items())[6])
+        print(list(doc.iterate_items())[7])
+        print(list(doc.iterate_items())[8])
+        print(list(doc.iterate_items())[9])
+        print(list(doc.iterate_items())[10])
+        print(list(doc.iterate_items())[11])
+        print(list(doc.iterate_items())[12])
+        print(list(doc.iterate_items())[13])
+        print(list(doc.iterate_items())[14])
+        print(list(doc.iterate_items())[15])
+        print(list(doc.iterate_items())[16])
+        print(list(doc.iterate_items())[17])
+        print(list(doc.iterate_items())[18])
+        print(list(doc.iterate_items())[19])
+        print(list(doc.iterate_items())[20])
+        print(list(doc.iterate_items())[21])
+        # # ----------------------------------------------------------------
+        # # STAGE 3: Collect Items by Page
+        # # ----------------------------------------------------------------
+        # print("   [2/4] Collecting document items...")
+        # pages_items = {}
+        # item_count = 0
+        #
+        # try:
+        #     # Iterate through all items in the document
+        #     # doc.iterate_items() returns (item, hierarchy_level) tuples
+        #     for item, level in doc.iterate_items():
+        #         # Skip items without provenance (page location info)
+        #         if not item.prov:
+        #             continue
+        #
+        #         # Get page number from first provenance entry
+        #         # Docling tracks which page(s) each item appears on
+        #         p_no = item.prov[0].page_no
+        #
+        #         # Initialize page list if this is first item on page
+        #         if p_no not in pages_items:
+        #             pages_items[p_no] = []
+        #
+        #         # Add item with its hierarchy level
+        #         # ================================================================
+        #         # DOCLING DOCUMENT ITEM TYPES - COMPREHENSIVE REFERENCE
+        #         # ================================================================
+        #         """
+        #         The pages_items dictionary captures various document elements identified
+        #         by Docling's ML models during PDF parsing. Each item is stored as:
+        #
+        #         pages_items[p_no].append({
+        #             "item": item,    # The actual DocItem object (one of the types below)
+        #             "level": level   # Hierarchy depth for maintaining document structure
+        #         })
+        #         """
+        #
+        #         # ----------------------------------------------------------------
+        #         # 1. TextItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Regular text content (paragraphs, sentences, body text)
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: The actual text content string
+        #         #   - label: Type classification (e.g., "paragraph", "text")
+        #         #   - prov: Provenance information (page number, bounding box coordinates)
+        #         #
+        #         # USAGE: Represents normal paragraph text, list items, body content
+        #         #
+        #         # EXAMPLE:
+        #         #   "This is a paragraph discussing the methodology used in the study..."
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 2. SectionHeaderItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Section and subsection headers/titles
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: Header text content
+        #         #   - level: Hierarchy depth (1 = top-level, 2 = subsection, 3 = sub-subsection, etc.)
+        #         #   - label: "section_header"
+        #         #
+        #         # PURPOSE: Used for building breadcrumbs and document structure navigation
+        #         #          The level attribute determines indentation and hierarchy
+        #         #
+        #         # EXAMPLE:
+        #         #   Level 1: "Introduction"
+        #         #   Level 2: "Background and Motivation"
+        #         #   Level 3: "Historical Context"
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 3. PictureItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Images, charts, diagrams, photographs, illustrations
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - image: Image data object containing pixel data
+        #         #   - get_image(doc): Method to extract the actual PIL Image object
+        #         #   - label: "picture"
+        #         #   - prov: Location information (page, bounding box)
+        #         #
+        #         # USAGE: Represents visual content including:
+        #         #   - Charts and graphs
+        #         #   - Photographs
+        #         #   - Diagrams and flowcharts
+        #         #   - Illustrations
+        #         #   - Infographics
+        #         #
+        #         # NOTE: Your Smart V2 code extracts these as high-res PNG files
+        #         #       and sends them to GPT-4 Vision for AI-powered descriptions
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 4. TableItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Tabular data structures (rows, columns, cells)
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - table_data: Structured table representation with cell relationships
+        #         #   - get_image(doc): Can ALSO extract table as image (returns PIL Image)
+        #         #   - export_to_dataframe(): Converts to pandas DataFrame
+        #         #   - export_to_markdown(): Converts to Markdown table format
+        #         #   - label: "table"
+        #         #
+        #         # PURPOSE: Represents structured data in rows/columns format
+        #         #
+        #         # CRITICAL INSIGHT: TableItem can serve DUAL PURPOSES:
+        #         #   1. Structured data tables (export to DataFrame/Markdown)
+        #         #   2. Visual charts/graphs that Docling misclassified as tables
+        #         #
+        #         # NOTE: Your Smart V2 code treats TableItem as BOTH:
+        #         #   - A potential visual (get_image() → save as PNG → AI description)
+        #         #   - Structured data (export_to_markdown() for actual data tables)
+        #         #
+        #         # This dual treatment is the key innovation that catches charts
+        #         # misclassified as tables by the ML models!
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 5. ListItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Bulleted or numbered list items
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: List item content
+        #         #   - enumeration: List marker/number (e.g., "•", "1.", "a)")
+        #         #   - label: "list_item"
+        #         #
+        #         # EXAMPLE:
+        #         #   • First bullet point
+        #         #   • Second bullet point
+        #         #   1. First numbered item
+        #         #   2. Second numbered item
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 6. TitleItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Document title (usually the main document heading)
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: Title text
+        #         #   - label: "title"
+        #         #
+        #         # USAGE: Represents the main document title, typically on the first page
+        #         #
+        #         # EXAMPLE:
+        #         #   "Annual Financial Report 2024"
+        #         #   "Clinical Trial Results: Phase III Study"
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 7. KeyValueItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Key-value pairs (common in forms and metadata sections)
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - key: The label/field name
+        #         #   - value: The corresponding value
+        #         #   - label: "key_value"
+        #         #
+        #         # USAGE: Common in forms, metadata, structured information
+        #         #
+        #         # EXAMPLE:
+        #         #   Key: "Patient ID"     Value: "PT-2024-001"
+        #         #   Key: "Date"           Value: "January 15, 2024"
+        #         #   Key: "Department"     Value: "Cardiology"
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 8. PageHeader
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Repeating headers at the top of pages
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: Header content
+        #         #   - label: "page_header"
+        #         #
+        #         # USAGE: Represents recurring headers across multiple pages
+        #         #
+        #         # EXAMPLE:
+        #         #   "Confidential - Internal Use Only"
+        #         #   "Q3 2024 Financial Report"
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 9. PageFooter
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Repeating footers at the bottom of pages
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: Footer content
+        #         #   - label: "page_footer"
+        #         #
+        #         # USAGE: Represents recurring footers (page numbers, copyright, etc.)
+        #         #
+        #         # EXAMPLE:
+        #         #   "Page 5 of 23"
+        #         #   "© 2024 Acme Corporation. All rights reserved."
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 10. CaptionItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Captions for figures, tables, exhibits
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: Caption text
+        #         #   - label: "caption"
+        #         #
+        #         # USAGE: Describes associated visual elements
+        #         #
+        #         # EXAMPLE:
+        #         #   "Figure 1: Revenue Trends Over Five Years"
+        #         #   "Table 3: Survey Results by Demographics"
+        #         #   "Exhibit 5: Market Share Analysis"
+        #         #
+        #         # CRITICAL NOTE: Your Smart V2 "smart reordering" algorithm specifically
+        #         # detects these patterns using regex:
+        #         #   Pattern: r'^(Exhibit|Figure|Fig\.|Table|Source)[:\s]+\d+'
+        #         #
+        #         # When detected AFTER a visual (PictureItem/TableItem), the algorithm
+        #         # SWAPS their positions to improve readability:
+        #         #   BEFORE: [Visual, Caption]
+        #         #   AFTER:  [Caption, Visual]
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 11. FormulaItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Mathematical equations and formulas
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: LaTeX or text representation of the formula
+        #         #   - label: "formula"
+        #         #
+        #         # USAGE: Represents mathematical expressions, equations, chemical formulas
+        #         #
+        #         # EXAMPLE:
+        #         #   "E = mc²"
+        #         #   "∫₀^∞ e^(-x²) dx = √π/2"
+        #         #   "C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O"
+        #         #
+        #
+        #         # ----------------------------------------------------------------
+        #         # 12. CodeItem
+        #         # ----------------------------------------------------------------
+        #         # DEFINITION: Code snippets or programming content
+        #         #
+        #         # ATTRIBUTES:
+        #         #   - text: Code content
+        #         #   - language: Programming language (if detected)
+        #         #   - label: "code"
+        #         #
+        #         # USAGE: Represents source code, scripts, command-line examples
+        #         #
+        #         # EXAMPLE:
+        #         #   def calculate_roi(revenue, cost):
+        #         #       return (revenue - cost) / cost * 100
+        #         #
+        #
+        #         # ================================================================
+        #         # HIERARCHY AND LEVEL TRACKING
+        #         # ================================================================
+        #         """
+        #         The 'level' attribute in pages_items tracks document hierarchy:
+        #
+        #         LEVEL USAGE BY ITEM TYPE:
+        #         --------------------------
+        #         1. SectionHeaderItem:
+        #            - level = 1 (Main section: "Introduction")
+        #            - level = 2 (Subsection: "Background")
+        #            - level = 3 (Sub-subsection: "Historical Context")
+        #            - Used to build breadcrumb navigation
+        #
+        #         2. All Other Items:
+        #            - Inherit the level from the most recent SectionHeaderItem
+        #            - Maintains hierarchical context for content organization
+        #            - Enables nested document structure tracking
+        #
+        #         BREADCRUMB BUILDING EXAMPLE:
+        #         ----------------------------
+        #         Page 1:
+        #           - SectionHeaderItem (level=1): "Financial Overview"
+        #             → Breadcrumbs: ["Financial Overview"]
+        #
+        #           - TextItem (level=1): "This section discusses..."
+        #             → Inherits level 1 context
+        #
+        #           - SectionHeaderItem (level=2): "Revenue Analysis"
+        #             → Breadcrumbs: ["Financial Overview", "Revenue Analysis"]
+        #
+        #           - PictureItem (level=2): [Chart showing revenue trends]
+        #             → Inherits level 2 context
+        #         """
+        #
+        #         # ================================================================
+        #         # SMART V2 SPECIFIC HANDLING
+        #         # ================================================================
+        #         """
+        #         Your DoclingSmartV2 code specifically processes these item types:
+        #
+        #         1. SectionHeaderItem → Updates breadcrumbs list
+        #            Example: breadcrumbs = ["Section 1", "Subsection 1.2"]
+        #
+        #         2. PictureItem → Visual extraction pipeline:
+        #            - Extract high-res image (3.0x scaling = 216 DPI)
+        #            - Save as figures/fig_pX_Y.png
+        #            - Send to GPT-4 Vision for AI description
+        #            - Inject Markdown: ![Description](path/to/image.png)
+        #
+        #         3. TableItem → DUAL TREATMENT (Innovation!):
+        #            - Treat as potential VISUAL (get_image() → save PNG → AI analyze)
+        #            - Also export structured data (export_to_markdown())
+        #            - Catches charts misclassified as tables by ML models
+        #
+        #         4. TextItem → Caption pattern detection:
+        #            - Regex: r'^(Exhibit|Figure|Fig\.|Table|Source)[:\s]+\d+'
+        #            - If matches AND follows a visual → SWAP positions
+        #            - Improves readability: [Caption, Visual] instead of [Visual, Caption]
+        #
+        #         5. Other Items (ListItem, TextItem, etc.) → Standard Markdown rendering
+        #         """
+        #
+        #         # ================================================================
+        #         # STORAGE STRUCTURE
+        #         # ================================================================
+        #         """
+        #         pages_items is a dictionary organized by page number:
+        #
+        #         pages_items = {
+        #             1: [
+        #                 {"item": TitleItem(...), "level": 0},
+        #                 {"item": SectionHeaderItem(...), "level": 1},
+        #                 {"item": TextItem(...), "level": 1},
+        #                 {"item": PictureItem(...), "level": 1},
+        #                 {"item": CaptionItem(...), "level": 1}
+        #             ],
+        #             2: [
+        #                 {"item": SectionHeaderItem(...), "level": 2},
+        #                 {"item": TableItem(...), "level": 2},
+        #                 {"item": TextItem(...), "level": 2}
+        #             ],
+        #             ...
+        #         }
+        #
+        #         This structure preserves:
+        #         - Page-based organization
+        #         - Reading order within each page
+        #         - Hierarchical context via level tracking
+        #         - Complete document structure for processing
+        #         """
+        #         pages_items[p_no].append({
+        #             "item": item,    # The actual content item
+        #             "level": level   # Hierarchy depth (for headers)
+        #         })
+        #         item_count += 1
+        #
+        #     print(f"      SUCCESS: Collected {item_count} items across {len(pages_items)} pages")
+        # except Exception as e:
+        #     print(f"      FAILED: Item collection error - {str(e)}")
+        #     raise
+        # print(pages_items[1])
+        #
+        # # ----------------------------------------------------------------
+        # # STAGE 4: Smart Processing (Per Page)
+        # # ----------------------------------------------------------------
+        # print("   [3/4] Smart sorting & extracting visuals...")
+        # metadata_pages = []
+        # global_offset = 0
+        # global_breadcrumbs = []
+        #
+        # pages_processed = 0
+        # visuals_extracted = 0
+        #
+        # for p_no in sorted(pages_items.keys()):
+        #     items = pages_items[p_no]
+        #
+        #     # ============================================================
+        #     # SMART REORDERING: Fix Caption Placement
+        #     # ============================================================
+        #     # Reorder items so captions appear BEFORE their visuals
+        #     # Example: [Image, "Exhibit 1"] -> ["Exhibit 1", Image]
+        #     ordered_items = self._smart_reorder(items)
+        #
+        #     # Page-specific collectors
+        #     page_lines = []        # Text content lines
+        #     page_images = []       # Image filenames
+        #     page_tables = []       # Table indicators
+        #
+        #     # ============================================================
+        #     # BREADCRUMB CONTEXT INJECTION
+        #     # ============================================================
+        #     # If we have section context from previous pages, inject it
+        #     if global_breadcrumbs:
+        #         context_str = " > ".join(global_breadcrumbs)
+        #         page_lines.append(f"<!-- Context: {context_str} -->")
+        #
+        #     # Page header
+        #     page_lines.append(f"\n# Page {p_no}\n")
+        #
+        #     # ============================================================
+        #     # PROCESS EACH ITEM ON THE PAGE
+        #     # ============================================================
+        #     for entry in ordered_items:
+        #         item = entry["item"]
+        #         level = entry["level"]
+        #
+        #         # --------------------------------------------------------
+        #         # SECTION HEADERS: Update Breadcrumbs
+        #         # --------------------------------------------------------
+        #         if isinstance(item, SectionHeaderItem):
+        #             text = item.text.strip()
+        #
+        #             # Update global breadcrumb hierarchy
+        #             # If new header is at same/higher level, clear deeper levels
+        #             if len(global_breadcrumbs) >= level:
+        #                 global_breadcrumbs = global_breadcrumbs[:level-1]
+        #
+        #             # Add new header to breadcrumbs
+        #             global_breadcrumbs.append(text)
+        #
+        #             # Output header with appropriate Markdown level
+        #             # level+1 because page title is already H1
+        #             page_lines.append(f"\n{'#' * (level + 1)} {text}\n")
+        #
+        #         # --------------------------------------------------------
+        #         # TEXT ITEMS: Standard Paragraphs
+        #         # --------------------------------------------------------
+        #         elif isinstance(item, TextItem):
+        #             text = item.text.strip()
+        #
+        #             # Filter out common boilerplate text
+        #             # Customize this list based on your document source
+        #             # boilerplate = [
+        #             #     "morgan stanley | research",
+        #             #     "source:",
+        #             #     "page"
+        #             # ]
+        #             #
+        #             # # Skip if text matches boilerplate (case-insensitive)
+        #             # if text.lower() in boilerplate:
+        #             #     continue
+        #
+        #             # Only include meaningful text (more than single character)
+        #             if len(text) > 1:
+        #                 page_lines.append(text)
+        #
+        #         # --------------------------------------------------------
+        #         # PICTURE ITEMS: Standard Image Extraction
+        #         # --------------------------------------------------------
+        #         elif isinstance(item, PictureItem):
+        #             success = self._handle_visual(
+        #                 item, doc, p_no, doc_out_dir,
+        #                 page_images, page_lines, is_table=False
+        #             )
+        #             if success:
+        #                 visuals_extracted += 1
+        #
+        #         # --------------------------------------------------------
+        #         # TABLE ITEMS: Dual Extraction (Text + Image)
+        #         # --------------------------------------------------------
+        #         # This is the KEY FIX for missing charts
+        #         # Some charts are misclassified as tables
+        #         elif isinstance(item, TableItem):
+        #             # Attempt 1: Extract as Text Table
+        #             md_table = ""
+        #             try:
+        #                 df = item.export_to_dataframe()
+        #                 if not df.empty:
+        #                     md_table = df.to_markdown(index=False)
+        #             except Exception as e:
+        #                 # Table text extraction failed, that's okay
+        #                 pass
+        #
+        #             # Attempt 2: Extract as Visual (Chart/Graph)
+        #             # TableItem can have images if it's actually a chart
+        #             img_saved = self._handle_visual(
+        #                 item, doc, p_no, doc_out_dir,
+        #                 page_images, page_lines, is_table=True
+        #             )
+        #
+        #             if img_saved:
+        #                 visuals_extracted += 1
+        #
+        #             # If no image was extracted but we have table text, output it
+        #             if not img_saved and md_table:
+        #                 page_lines.append(f"\n{md_table}\n")
+        #                 page_tables.append("Text Table")
+        #
+        #     # ============================================================
+        #     # SAVE PAGE MARKDOWN FILE
+        #     # ============================================================
+        #     final_text = "\n\n".join(page_lines)
+        #     md_name = f"page_{p_no}.md"
+        #
+        #     try:
+        #         with open(doc_out_dir / "pages" / md_name, "w", encoding="utf-8") as f:
+        #             f.write(final_text)
+        #     except IOError as e:
+        #         print(f"      ERROR: Failed to write {md_name}: {str(e)}")
+        #         raise
+        #
+        #     # ============================================================
+        #     # PAGE METADATA
+        #     # ============================================================
+        #     metadata_pages.append({
+        #         "page": p_no,
+        #         "file": md_name,
+        #         "breadcrumbs": list(global_breadcrumbs),  # Copy of current state
+        #         "images": page_images,
+        #         "tables": len(page_tables),
+        #         "start": global_offset,
+        #         "end": global_offset + len(final_text)
+        #     })
+        #
+        #     global_offset += len(final_text)
+        #     pages_processed += 1
+        #
+        # print(f"      SUCCESS: Processed {pages_processed} pages, extracted {visuals_extracted} visuals")
+        #
+        # # ----------------------------------------------------------------
+        # # STAGE 5: Save Metadata
+        # # ----------------------------------------------------------------
+        # print("   [4/4] Saving metadata...")
+        # try:
+        #     self._save_meta(doc_out_dir, pdf_path, metadata_pages)
+        #     print(f"      SUCCESS: Metadata saved")
+        # except Exception as e:
+        #     print(f"      FAILED: Metadata save error - {str(e)}")
+        #     raise
+        #
+        # print(f"\n{'='*70}")
+        # print(f"EXTRACTION COMPLETE")
+        # print(f"{'='*70}")
+        # print(f"Output directory: {doc_out_dir}")
+        # print(f"Pages: {pages_processed}")
+        # print(f"Visuals: {visuals_extracted}")
+        # print(f"{'='*70}\n")
 
     def _smart_reorder(self, items: List[Dict]) -> List[Dict]:
         """
