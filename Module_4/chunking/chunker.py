@@ -272,8 +272,7 @@ def create_semantic_chunks(
         # -------------------------------------------------------------------
         # Check flush conditions (with type awareness!)
         # -------------------------------------------------------------------
-        section_changed = (current_breadcrumb and
-                          breadcrumb != current_breadcrumb)
+        section_changed = (current_breadcrumb and breadcrumb != current_breadcrumb)
         would_exceed_max = (buffer_size + chunk_size > max_size)
         is_next_header = next_is_header(idx)
 

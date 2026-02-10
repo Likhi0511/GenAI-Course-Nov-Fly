@@ -1,0 +1,2434 @@
+{
+  "metadata": {
+    "enriched_at": "2026-02-10T06:58:56.520439",
+    "total_chunks": 20,
+    "enricher_version": "2.0.0",
+    "configuration": {
+      "comprehend_enabled": true,
+      "patterns_enabled": true,
+      "confidence_threshold": 0.7,
+      "aws_region": "us-east-1"
+    }
+  },
+  "chunks": [
+    {
+      "content": "## Thematics\n\n## Uncovering Alpha in AI's Rate of Change\n\nMore than two years since ChatGPT's launch, we remain in the early innings of AI's diffusion. This is the third iteration of the most comprehensive AI stock mapping exercise in the market. Rate of change continues to drive outperformance, and we believe 2025 will be the year of Agentic AI.\n\nAI's Rate of Change Continues to Surprise: Our first AI Adopter survey was published in January 2024, our second in June 2024. This is our third such analysis. We have been surprised by the continued extent of changes made by our analysts across >3,700 global stocks under coverage. 585 stocks   had their AI exposure or materiality changed ($13trn of market cap). AI model capabilities and costs continue to evolve rapidly and corporate adoption is still low. AI's diffusion is accelerating but decidedly remains in its early innings.\n\nAI's Rate of Change Has Driven Outperformance: Exhibit 1  shows the 2H24 outperformance of stocks which previously saw their exposure and materiality increased. Looking forward, overweight rated stocks matching these criteria in this latest survey have 29% upside to price targets. We explain how to access and use our database and sees three opportunities ahead: (1) Enablers with rising materiality; (2) Adopters with pricing power; (3) Financials with AI 'Rate of Change' tailwinds.\n\n2025 - Agentic AI Adopters: As in previous tech cycles, the equity markets are poised for Semiconductor leadership to give way to the Software Layer. That process is underway. Simply put, AI Agents give \"agency\" to software programs. In other words AI Adopter companies can move from the reactive \"chatbot phase\" to the proactive \"task-fulfillment phase\" of AI; entailing broad productivity gains. We believe 2025 will be a year of Agentic AI, robust enterprise adoption, outperformance of favoured Agentic plays, positive surprises in model capabilities, greater breadth of monetisation and thus diminishing focus on ROI debates.",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 1994,
+        "num_atomic_chunks": 6,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "More than two years",
+              "score": 0.9704633355140686
+            },
+            {
+              "text": "third iteration",
+              "score": 0.992393434047699
+            },
+            {
+              "text": "first AI",
+              "score": 0.8417814373970032
+            },
+            {
+              "text": "second",
+              "score": 0.9805302619934082
+            },
+            {
+              "text": "third such analysis",
+              "score": 0.9527495503425598
+            },
+            {
+              "text": ">3,700 global stocks",
+              "score": 0.9779812097549438
+            },
+            {
+              "text": "585 stocks",
+              "score": 0.984919548034668
+            },
+            {
+              "text": "$13trn",
+              "score": 0.9994363784790039
+            },
+            {
+              "text": "29%",
+              "score": 0.9960238933563232
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "ChatGPT",
+              "score": 0.9882756471633911
+            },
+            {
+              "text": "Agentic AI",
+              "score": 0.7071177959442139
+            },
+            {
+              "text": "Agentic",
+              "score": 0.7937772870063782
+            },
+            {
+              "text": "Agentic",
+              "score": 0.775071918964386
+            }
+          ],
+          "DATE": [
+            {
+              "text": "2025",
+              "score": 0.9974053502082825
+            },
+            {
+              "text": "January 2024",
+              "score": 0.999630868434906
+            },
+            {
+              "text": "June 2024",
+              "score": 0.9994778037071228
+            },
+            {
+              "text": "2025",
+              "score": 0.8906545639038086
+            },
+            {
+              "text": "2025",
+              "score": 0.9947077035903931
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "Exhibit 1",
+              "score": 0.8405553698539734
+            },
+            {
+              "text": "2H24",
+              "score": 0.8776277899742126
+            }
+          ]
+        },
+        "monetary_values": [
+          "$13"
+        ],
+        "percentages": [
+          "29%"
+        ],
+        "quarters": [],
+        "years": [
+          " 2025",
+          " 2024",
+          " 2024",
+          "\n\n2025",
+          " 2025"
+        ],
+        "financial_metrics": [
+          "ROI"
+        ]
+      }
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 1 : Stock returns where both materiality and exposure were increased\n![fig_p1_1.png](../figures/fig_p1_1.png)\n*AI Analysis:* This is a line chart.\n\n**Axes:**\n- The x-axis represents time from December 2023 to November 2024.\n- The y-axis represents stock returns, indexed to 100.\n\n**Trends:**\n- The \"Stocks With Both AI Materiality & Exposure Increased\" line (gold) shows consistent growth, especially from June onward, peaking in November.\n- The \"MSCI World\" line (blue) follows a steadier path with slight fluctuations and modest growth.\n\n**Key Insights:**\n- Stocks with AI focus show a significant upward trend compared to the MSCI World, reflecting stronger performance when both AI materiality and exposure are increased.\n\nSource: Eikon, MS Research. Past performance is no guarantee of future results. Results shown do not include transaction costs.\n\n**Image**\n![fig_p1_2.png](../figures/fig_p1_2.png)\n*AI Analysis:* The image displays a logo with the text \"GLOBAL INSIGHT.\" There are no axes, trends, or data points to analyze as it is not a chart, diagram, or data table.",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 1103,
+        "num_atomic_chunks": 3,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "both",
+              "score": 0.904749870300293
+            },
+            {
+              "text": "100",
+              "score": 0.9351738095283508
+            },
+            {
+              "text": "both",
+              "score": 0.9053530097007751
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p1_1.png",
+              "score": 0.8995134830474854
+            },
+            {
+              "text": "x-axis",
+              "score": 0.9152646064758301
+            },
+            {
+              "text": "y-axis",
+              "score": 0.9462478160858154
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.9635558724403381
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.8642954230308533
+            },
+            {
+              "text": "fig_p1_2.png",
+              "score": 0.9161272644996643
+            }
+          ],
+          "DATE": [
+            {
+              "text": "December 2023",
+              "score": 0.9995349645614624
+            },
+            {
+              "text": "November 2024",
+              "score": 0.9986461997032166
+            },
+            {
+              "text": "June",
+              "score": 0.9978704452514648
+            },
+            {
+              "text": "November",
+              "score": 0.9981734752655029
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Eikon",
+              "score": 0.9927067160606384
+            },
+            {
+              "text": "MS Research",
+              "score": 0.9917165637016296
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [
+          " 2023",
+          " 2024"
+        ],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "| 0                                                                                                    | 1                |\n|:-----------------------------------------------------------------------------------------------------|:-----------------|\n| Morgan Stanley & Co. International Edward Stanley Equity Strategist Edward.Stanley@morganstanley.com | +44 20 7425-0840 |\n| Todd Castagno, CFA, CPA GVAT Strategist Todd.Castagno@morganstanley.com                              | +1 212 761-6893  |\n| Keith Weiss, CFA Equity Analyst Keith.Weiss@morganstanley.com                                        | +1 212 761-4149  |\n| Matias Ovrum Equity Strategist Matias.Ovrum@morganstanley.com                                        | +44 20 7425-9902 |\n| Qingyi Huang Equity Strategist Qingyi.Huang@morganstanley.com                                        | +1 212 296-4837  |\n| Elizabeth Porter, CFA Equity Analyst Elizabeth.E.Porter@morganstanley.com                            | +1 212 761-3632  |\n| Jasper Lin Equity Strategist Jasper.Lin@morganstanley.com                                            | +1 212 761-0837  |\n| Michelle M. Weaver, CFA Equity Strategist Michelle.M.Weaver@morganstanley.com                        | +1 212 296-5254  |\n\n*AI Analysis:* The purpose of this table is to provide contact information for various professionals at Morgan Stanley, specifically equity strategists and analysts. The structure of the table is simple, consisting of two columns: the first column lists the names, titles, and email addresses of the individuals, and the second column provides their respective phone numbers.\n\nKey information includes:\n\n1. **Names and Positions**: Each row lists a professional's name along with their designation—either as an Equity Strategist or Equity Analyst—often followed by professional qualifications such as CFA or CPA.\n\n2. **Contact Information**: For each professional, the table provides their email address and phone number, indicating their availability for contact through these channels.\n\nThis table is likely intended for use within the financial industry or",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 2100,
+        "num_atomic_chunks": 1,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley & Co. International",
+              "score": 0.9970227479934692
+            },
+            {
+              "text": "Edward Stanley",
+              "score": 0.8354735970497131
+            },
+            {
+              "text": "CPA",
+              "score": 0.8233760595321655
+            },
+            {
+              "text": "GVAT",
+              "score": 0.9258154034614563
+            },
+            {
+              "text": "Morgan Stanley",
+              "score": 0.998356819152832
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "Edward.Stanley@morganstanley.com",
+              "score": 0.9547678232192993
+            },
+            {
+              "text": "+44 20 7425-0840",
+              "score": 0.9953738451004028
+            },
+            {
+              "text": "+1 212 761-6893",
+              "score": 0.9873270988464355
+            },
+            {
+              "text": "Keith.Weiss@morganstanley.com",
+              "score": 0.9455729722976685
+            },
+            {
+              "text": "+1 212 761-4149",
+              "score": 0.9918165802955627
+            },
+            {
+              "text": "+44 20 7425-9902",
+              "score": 0.9958100914955139
+            },
+            {
+              "text": "Qingyi.Huang@morganstanley.com",
+              "score": 0.882039487361908
+            },
+            {
+              "text": "+1 212 296-4837",
+              "score": 0.994334876537323
+            },
+            {
+              "text": "Elizabeth.E.Porter@morganstanley.com",
+              "score": 0.9677000045776367
+            },
+            {
+              "text": "+1 212 761-3632",
+              "score": 0.9922948479652405
+            },
+            {
+              "text": "Jasper.Lin@morganstanley.com",
+              "score": 0.886181652545929
+            },
+            {
+              "text": "+1 212 761-0837",
+              "score": 0.9941529631614685
+            },
+            {
+              "text": "Michelle.M.Weaver@morganstanley.com",
+              "score": 0.834189236164093
+            },
+            {
+              "text": "+1 212 296-5254",
+              "score": 0.9920943379402161
+            }
+          ],
+          "PERSON": [
+            {
+              "text": "Todd Castagno",
+              "score": 0.9992862939834595
+            },
+            {
+              "text": "Keith Weiss",
+              "score": 0.9983903765678406
+            },
+            {
+              "text": "Matias Ovrum",
+              "score": 0.9961181879043579
+            },
+            {
+              "text": "Qingyi Huang",
+              "score": 0.9554147720336914
+            },
+            {
+              "text": "Elizabeth Porter",
+              "score": 0.9980811476707458
+            },
+            {
+              "text": "Jasper Lin",
+              "score": 0.9974907636642456
+            },
+            {
+              "text": "Michelle M. Weaver",
+              "score": 0.9980375170707703
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "two columns",
+              "score": 0.9957118034362793
+            },
+            {
+              "text": "first column",
+              "score": 0.9920154213905334
+            },
+            {
+              "text": "second column",
+              "score": 0.9963233470916748
+            },
+            {
+              "text": "Each row",
+              "score": 0.9855812788009644
+            },
+            {
+              "text": "each professional",
+              "score": 0.9364346265792847
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality.\n\nMorgan Stanley does and seeks to do business with companies covered in Morgan Stanley Research. As a result, investors should be aware that the firm may have a conflict of interest that could affect the objectivity of Morgan Stanley Research. Investors should consider Morgan Stanley Research as only a single factor in making their investment decision.\n\nFor analyst certification and other important disclosures, refer to the Disclosure Section, located at the end of this report.\n\n+= Analysts employed by non-U.S. affiliates are not registered with FINRA, may not be associated persons of the member and may not be subject to FINRA restrictions on communications with a subject company, public appearances and trading securities held by a research analyst account.",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 863,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": ">3,700 stocks",
+              "score": 0.9524603486061096
+            },
+            {
+              "text": "single factor",
+              "score": 0.9362258315086365
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley",
+              "score": 0.9989665150642395
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.998766303062439
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9986951351165771
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9990602731704712
+            },
+            {
+              "text": "FINRA",
+              "score": 0.997616171836853
+            },
+            {
+              "text": "FINRA",
+              "score": 0.9985610842704773
+            }
+          ],
+          "LOCATION": [
+            {
+              "text": "U.S.",
+              "score": 0.9429531097412109
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "## Mapping AI's Rate of Change in Charts\n\n**Image**\n*Caption:* Exhibit 2: Morgan Stanley classification for how AI Rate of Change \"Exposure\" is scored\n![fig_p2_1.png](../figures/fig_p2_1.png)\n*AI Analysis:* This is a diagram. It visually represents a classification system for a company's AI exposure according to Morgan Stanley.\n\nAxes and Layout:\n- Horizontal Axis: Indicates the increasing importance of AI exposure from left to right.\n\nKey Components:\n- Categories: Listed from left to right are \"Disrupted,\" \"Wildcard,\" \"Don’t Know,\" \"Protected,\" \"Adopter,\" \"Enabler,\" and \"Enabler & Adopter.\"\n\nTrends and Insights:\n- The progression suggests a shift from uncertainty or minimal relevance in AI (\"Disrupted,\" \"Wildcard\") to strategic and integral use of AI (\"Enabler & Adopter\").\n- The positioning also indicates an increasing level of engagement or integration of AI within a company's operations.\n\nSource: Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 4: Most analyst reclassifications are by multiple increments to the upside and downside\n![fig_p2_2.png](../figures/fig_p2_2.png)\n*AI Analysis:* This is a chart. \n\n**Axes:**\n- **X-axis:** Displays the magnitude of change in increments, ranging from -5 to 5.\n- **Y-axis:** Represents the number of analyst reclassifications, ranging from 0 to 140.\n\n**Trends:**\n- Most reclassifications occur at increments of +1 and +2, with significant peaks.\n- Positive changes dominate, especially at increments +1 and +2.\n- Exposure and materiality changes increase more on the positive side compared to negative.\n\n**Key Insights:**\n- The most common changes are +1 and +2, indicating analysts frequently reclassify by these increments.\n- Positive reclassifications are more frequent than negative, suggesting an overall optimistic adjustment trend.\n- Materiality changes lead at +2, indicating a focus on significant positive material changes.",
+      "metadata": {
+        "breadcrumbs": "Mapping AI's Rate of Change in Charts",
+        "char_count": 1889,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley",
+              "score": 0.9903037548065186
+            },
+            {
+              "text": "Morgan Stanley",
+              "score": 0.9990866184234619
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9944373369216919
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p2_1.png",
+              "score": 0.9218635559082031
+            },
+            {
+              "text": "fig_p2_2.png",
+              "score": 0.8990569710731506
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "-5",
+              "score": 0.8315939903259277
+            },
+            {
+              "text": "5",
+              "score": 0.9124808311462402
+            },
+            {
+              "text": "0",
+              "score": 0.9657076597213745
+            },
+            {
+              "text": "140",
+              "score": 0.9496346116065979
+            },
+            {
+              "text": "+1",
+              "score": 0.9179229140281677
+            },
+            {
+              "text": "+2",
+              "score": 0.9832296371459961
+            },
+            {
+              "text": "+1",
+              "score": 0.9400104880332947
+            },
+            {
+              "text": "+2",
+              "score": 0.9600895643234253
+            },
+            {
+              "text": "+1",
+              "score": 0.9742805361747742
+            },
+            {
+              "text": "+2",
+              "score": 0.9778104424476624
+            },
+            {
+              "text": "+2",
+              "score": 0.9763732552528381
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "Source: Morgan Stanley Research; Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality\n\n## Exhibit 6:\n\nAI Agent Infrastructure and Vendor plays within the Software layer - stocks in bold represent our favoured equities within the Agentic AI theme\n\nSource: Morgan Stanley Research; Last Price - MDB - $246, CFLT - $29, ESTC - $101, PATH - $13, APPN - $33, CRM - $332, MSFT - $423, TEAM - $250, WDAY - $252, NOW - $1073, SAP - 235, REL - £37, HUBS - $702, GTLB - $59, FRSH - $16, ASAN - $20, BOX - $31\n\n**Image**\n*Caption:* Exhibit 3: Morgan Stanley classification for how AI Rate of Change \"Materiality\" is scored\n![fig_p2_3.png](../figures/fig_p2_3.png)\n*AI Analysis:* This visual is a chart. \n\n**Axes and Elements:**\n- **Horizontal Axis:** Represents \"Increasing Importance\" of AI to the investment thesis of a company.\n- **Categories:** Insignificant, Don't Know, Moderate, Significant, Core to Thesis.\n\n**Trends and Key Insights:**\n- As AI importance increases from \"Insignificant\" to \"Core to Thesis,\" investment materiality improves.\n- Movement to higher importance (rightward) is indicated with a \"+1\" suggesting positive scoring.\n- Moving to lower importance (leftward) is indicated with a \"-1\" suggesting negative scoring.\n\nThis chart classifies the significance of AI in a company’s investment strategy and scores it accordingly.\n\nSource: Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 5: Steady progress is being made by companies in conveying their investment and equity story as it relates to AI\n![fig_p2_4.png](../figures/fig_p2_4.png)\n*AI Analysis:* This visual is a chart with bar graphs. The chart compares the perception of companies' ability to convey their investment and equity stories related to AI over three surveys.\n\n**Axes:**\n- **X-axis:** Three surveys (Survey 1, Survey 2, Survey 3).\n- **Y-axis:** Percentage, ranging from 0% to 80%.\n\n**Key Insights:**\n- There is a declining trend in the \"Insignificant/Don't Know\" category from 73% in Survey 1 to 67% in Survey 3.\n- The \"Core/Significant/Moderate\" category is gradually increasing from 27% in Survey 1 to 33% in Survey 3.\n- This indicates steady progress by companies in conveying their AI-related investment and equity stories over time.",
+      "metadata": {
+        "breadcrumbs": "Exhibit 6:",
+        "char_count": 2259,
+        "num_atomic_chunks": 7,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9966219067573547
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9984114766120911
+            },
+            {
+              "text": "Morgan Stanley",
+              "score": 0.9907175302505493
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9950805902481079
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": ">3,700 stocks",
+              "score": 0.8536688089370728
+            },
+            {
+              "text": "$246",
+              "score": 0.99685138463974
+            },
+            {
+              "text": "$29",
+              "score": 0.9972995519638062
+            },
+            {
+              "text": "$101",
+              "score": 0.9963032007217407
+            },
+            {
+              "text": "$13",
+              "score": 0.996567964553833
+            },
+            {
+              "text": "$33",
+              "score": 0.9975322484970093
+            },
+            {
+              "text": "$332",
+              "score": 0.9979066252708435
+            },
+            {
+              "text": "$423",
+              "score": 0.9984063506126404
+            },
+            {
+              "text": "$250",
+              "score": 0.9986740350723267
+            },
+            {
+              "text": "$252",
+              "score": 0.9984757900238037
+            },
+            {
+              "text": "$1073",
+              "score": 0.9983434081077576
+            },
+            {
+              "text": "£37",
+              "score": 0.9978522062301636
+            },
+            {
+              "text": "$702",
+              "score": 0.9967706799507141
+            },
+            {
+              "text": "$59",
+              "score": 0.9979614019393921
+            },
+            {
+              "text": "$16",
+              "score": 0.9978156089782715
+            },
+            {
+              "text": "$20",
+              "score": 0.9986233115196228
+            },
+            {
+              "text": "$31",
+              "score": 0.9982587695121765
+            },
+            {
+              "text": "three surveys",
+              "score": 0.8502348065376282
+            },
+            {
+              "text": "Three surveys",
+              "score": 0.9702929854393005
+            },
+            {
+              "text": "Survey",
+              "score": 0.7224122285842896
+            },
+            {
+              "text": "0%",
+              "score": 0.9963302612304688
+            },
+            {
+              "text": "80%",
+              "score": 0.9886778593063354
+            },
+            {
+              "text": "73%",
+              "score": 0.9977868795394897
+            },
+            {
+              "text": "Survey 1",
+              "score": 0.8300617933273315
+            },
+            {
+              "text": "67%",
+              "score": 0.9756187200546265
+            },
+            {
+              "text": "27%",
+              "score": 0.9970550537109375
+            },
+            {
+              "text": "Survey 1",
+              "score": 0.90350341796875
+            },
+            {
+              "text": "33%",
+              "score": 0.9774160385131836
+            }
+          ],
+          "DATE": [
+            {
+              "text": "NOW",
+              "score": 0.9045124650001526
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "235",
+              "score": 0.8170675039291382
+            },
+            {
+              "text": "fig_p2_3.png",
+              "score": 0.807960033416748
+            },
+            {
+              "text": "fig_p2_4.png",
+              "score": 0.8483811020851135
+            }
+          ]
+        },
+        "monetary_values": [
+          "$246",
+          "$29",
+          "$101",
+          "$13",
+          "$33",
+          "$332",
+          "$423",
+          "$250",
+          "$252",
+          "$1073",
+          "$702",
+          "$59",
+          "$16",
+          "$20",
+          "$31"
+        ],
+        "percentages": [
+          "0%",
+          "80%",
+          "73%",
+          "67%",
+          "27%",
+          "33%"
+        ],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "Source: Morgan Stanley Research; Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality\n\n## AI's Rate of Return in Charts\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_1.png](../figures/fig_p3_1.png)\n*AI Analysis:* This is a chart comparing \"Enabler/Adopters Core to Thesis\" and \"Enabler/Adopter Significant\" over time.\n\n**Axes:**\n- **X-axis:** Timeline from December 2023 to October 2024.\n- **Y-axis:** Index value ranging from 80 to 160.\n\n**Trends:**\n- Both lines start around the 100 mark but diverge in trends.\n- The \"Enabler/Adopters Core to Thesis\" (green line) shows a general upward trend, experiencing fluctuations but steadily increasing.\n- The \"Enabler/Adopter Significant\" (blue line) also shows growth but at a slower pace. It has more pronounced dips and peaks.\n\n**Key Insights:**\n- The \"Core to Thesis\" category experiences more consistent growth compared to \"Significant.\"\n- Both categories show overall positive trends, indicating growth or improvement over the timeframe.\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_2.png](../figures/fig_p3_2.png)\n*AI Analysis:* The visual is a chart comparing \"High Pricing Power Adopters\" and \"Low Pricing Power Adopters.\"\n\n**Axes:**\n- **X-axis:** Time (from December 23 to October 24).\n- **Y-axis:** Index level ranging from 90 to 140.\n\n**Trends:**\n- The \"High Pricing Power Adopters\" (green line) consistently remains above the \"Low Pricing Power Adopters\" (blue line).\n- The green line shows a general upward trend, with fluctuations but overall significant growth.\n- The blue line shows a moderate upward trend, with less volatility and smaller growth compared to the green line.\n\n**Key Insights:**\n- Companies with high pricing power exhibit stronger growth in their index levels than those with low pricing power.\n- There is a noticeable positive correlation between pricing power and performance over the time period shown.",
+      "metadata": {
+        "breadcrumbs": "AI's Rate of Return in Charts",
+        "char_count": 1978,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9955885410308838
+            },
+            {
+              "text": "FactSet",
+              "score": 0.9297915101051331
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9789308905601501
+            },
+            {
+              "text": "FactSet",
+              "score": 0.9403131604194641
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9173504114151001
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": ">3,700 stocks",
+              "score": 0.752710223197937
+            },
+            {
+              "text": "80",
+              "score": 0.978926956653595
+            },
+            {
+              "text": "160",
+              "score": 0.9480603933334351
+            },
+            {
+              "text": "Both lines",
+              "score": 0.9782997369766235
+            },
+            {
+              "text": "100 mark",
+              "score": 0.7568509578704834
+            },
+            {
+              "text": "Both categories",
+              "score": 0.9392685890197754
+            },
+            {
+              "text": "90",
+              "score": 0.9852710962295532
+            },
+            {
+              "text": "140",
+              "score": 0.9711300730705261
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p3_1.png",
+              "score": 0.891945481300354
+            },
+            {
+              "text": "fig_p3_2.png",
+              "score": 0.7815749645233154
+            }
+          ],
+          "DATE": [
+            {
+              "text": "December 2023",
+              "score": 0.9992020726203918
+            },
+            {
+              "text": "October 2024",
+              "score": 0.9980617761611938
+            },
+            {
+              "text": "December 23",
+              "score": 0.9980478882789612
+            },
+            {
+              "text": "October 24",
+              "score": 0.9927537441253662
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [
+          " 2023",
+          " 2024"
+        ],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 11: Market cap weighted performance by AI Exposure categorisation during 2024\n![fig_p3_3.png](../figures/fig_p3_3.png)\n*AI Analysis:* The visual is a chart.\n\n**Axes:**\n- **X-axis:** Time period from December 2023 to October 2024.\n- **Y-axis:** Market cap weighted performance index ranging from 90 to 140.\n\n**Trends:**\n- **Enabler/Adopter** shows the highest performance increase over time.\n- **Adopter** and **Enabler** also show significant upward trends.\n- **S&P500 Return** and **Protected** remain relatively stable, with minor fluctuations.\n- **Wildcard** and **Disrupted** show less growth, with **Disrupted** being the lowest performer.\n\n**Key Insights:**\n- Companies classified as **Enabler/Adopter** lead in performance.\n- **Disrupted** category underperforms throughout the year.\n- There's a clear positive impact on performance for companies with higher AI exposure.\n\nSource: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 8: Adopters Significant vs Insignificant\n![fig_p3_4.png](../figures/fig_p3_4.png)\n*AI Analysis:* The visual is a line chart.\n\n**Axes:**\n- **X-axis:** Time period from December 2023 to December 2024.\n- **Y-axis:** Index value ranging from 80 to 150.\n\n**Trends:**\n- **Adopter Insignificant (blue line):** Shows a generally stable trend with slight fluctuations, maintaining between 100 and 120.\n- **Adopter Significant (green line):** Exhibits a rising trend, with more noticeable fluctuations compared to the blue line. Starting around 100, it peaks above 140 by mid-2024 and remains higher than the blue line throughout most of the period.\n\n**Key Insights:**\n- \"Adopter Significant\" demonstrates greater growth and volatility compared to \"Adopter Insignificant.\"\n- Both lines start similarly, but \"Adopter Significant\" diverges and maintains a lead throughout the year.",
+      "metadata": {
+        "breadcrumbs": "AI's Rate of Return in Charts",
+        "char_count": 1845,
+        "num_atomic_chunks": 3,
+        "entities": {
+          "DATE": [
+            {
+              "text": "2024",
+              "score": 0.9927610158920288
+            },
+            {
+              "text": "December 2023",
+              "score": 0.998378574848175
+            },
+            {
+              "text": "October 2024",
+              "score": 0.9980128407478333
+            },
+            {
+              "text": "December 2023",
+              "score": 0.9988398551940918
+            },
+            {
+              "text": "December 2024",
+              "score": 0.998378574848175
+            },
+            {
+              "text": "mid-2024",
+              "score": 0.9953480362892151
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p3_3.png",
+              "score": 0.8849777579307556
+            },
+            {
+              "text": "fig_p3_4.png",
+              "score": 0.7309021353721619
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "90",
+              "score": 0.9844855070114136
+            },
+            {
+              "text": "140",
+              "score": 0.9587398171424866
+            },
+            {
+              "text": "80",
+              "score": 0.9768596291542053
+            },
+            {
+              "text": "150",
+              "score": 0.9238541722297668
+            },
+            {
+              "text": "100",
+              "score": 0.8990268111228943
+            },
+            {
+              "text": "120",
+              "score": 0.9683887958526611
+            },
+            {
+              "text": "around 100",
+              "score": 0.7633872032165527
+            },
+            {
+              "text": "above 140",
+              "score": 0.8673173189163208
+            },
+            {
+              "text": "Both lines",
+              "score": 0.9874678254127502
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "FactSet",
+              "score": 0.9634377360343933
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9713867902755737
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [
+          " 2024",
+          " 2023",
+          " 2024",
+          " 2023",
+          " 2024",
+          "2024"
+        ],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "Source: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 10: Disrupted Core vs Moderate\n![fig_p3_5.png](../figures/fig_p3_5.png)\n*AI Analysis:* The visual is a line chart.\n\n**Axes:**\n- **X-axis:** Timeline from December 23 to October 24, indicating months.\n- **Y-axis:** Values ranging from 50 to 110.\n\n**Trends:**\n- The \"Disrupted Core to Thesis\" line starts near 100, fluctuates mildly, and then experiences a significant drop around February. It fluctuates until October, stabilizing around 60.\n- The \"Disrupted Moderate\" line also starts near 100, maintains a more stable pattern, with minor fluctuations, mostly remaining above 90 until a drop near October.\n\n**Key Insights:**\n- \"Disrupted Core to Thesis\" shows volatility with a marked decline early in the period.\n- \"Disrupted Moderate\" is more stable but ends with a decline in October.\n- Both datasets exhibit a drop near the end, indicating possible external influencing factors affecting both metrics similarly by October.\n\nSource: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_6.png](../figures/fig_p3_6.png)\n*AI Analysis:* This visual is a chart, specifically a bar chart.\n\n### Axes Description:\n- **X-Axis:** Different categories: Median, Enabler/Adopter, Enabler, Adopter, Protected, Wildcard, Disrupted.\n- **Y-Axis (Left):** EV/Sales ratio ranging from 0.0x to 3.5x.\n- **Y-Axis (Right):** P/E ratio ranging from 12x to 22x.\n\n### Key Trends and Insights:\n- **EV/Sales (blue bars):** The \"Adopter\" category has the highest EV/Sales ratio, surpassing 3.0x. The \"Protected\" category has the lowest, below 1.0x.\n- **P/E (gold markers):** All categories have similar P/E ratios, generally between 14x and 17x, with some variation. The highest is slightly above 17x in the \"Enabler\" category.\n\nOverall, the\n\n## Executive Summary",
+      "metadata": {
+        "breadcrumbs": "Executive Summary",
+        "char_count": 1852,
+        "num_atomic_chunks": 5,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "FactSet",
+              "score": 0.9723364114761353
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9108253717422485
+            },
+            {
+              "text": "FactSet",
+              "score": 0.9784368872642517
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9881525039672852
+            },
+            {
+              "text": "FactSet",
+              "score": 0.9556457996368408
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9905344247817993
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p3_5.png",
+              "score": 0.899376630783081
+            },
+            {
+              "text": "fig_p3_6.png",
+              "score": 0.811760663986206
+            }
+          ],
+          "DATE": [
+            {
+              "text": "December 23",
+              "score": 0.9982080459594727
+            },
+            {
+              "text": "October 24",
+              "score": 0.9937726855278015
+            },
+            {
+              "text": "February",
+              "score": 0.9475044012069702
+            },
+            {
+              "text": "October",
+              "score": 0.9967796206474304
+            },
+            {
+              "text": "October",
+              "score": 0.9958937168121338
+            },
+            {
+              "text": "October",
+              "score": 0.9993641972541809
+            },
+            {
+              "text": "October",
+              "score": 0.9989700317382812
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "50",
+              "score": 0.9659681916236877
+            },
+            {
+              "text": "110",
+              "score": 0.9426126480102539
+            },
+            {
+              "text": "100",
+              "score": 0.920156717300415
+            },
+            {
+              "text": "around 60",
+              "score": 0.8920843601226807
+            },
+            {
+              "text": "100",
+              "score": 0.8217430710792542
+            },
+            {
+              "text": "above 90",
+              "score": 0.9340208172798157
+            },
+            {
+              "text": "Both datasets",
+              "score": 0.9375067353248596
+            },
+            {
+              "text": "both metrics",
+              "score": 0.9664958715438843
+            },
+            {
+              "text": "0.0x",
+              "score": 0.948678731918335
+            },
+            {
+              "text": "3.5x.",
+              "score": 0.9705453515052795
+            },
+            {
+              "text": "12x",
+              "score": 0.9911092519760132
+            },
+            {
+              "text": "22x",
+              "score": 0.9804321527481079
+            },
+            {
+              "text": "3.0x.",
+              "score": 0.9781904220581055
+            },
+            {
+              "text": "1.0x.",
+              "score": 0.8276451230049133
+            },
+            {
+              "text": "14x",
+              "score": 0.9900700449943542
+            },
+            {
+              "text": "17x",
+              "score": 0.9891329407691956
+            },
+            {
+              "text": "17x",
+              "score": 0.7681518197059631
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": [
+          "P/E"
+        ]
+      }
+    },
+    {
+      "content": "## Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality.\n\nThis is the third mapping (see here and here) of our global coverage as it pertains to the speed of AI adoption. We have again asked Morgan Stanley Research analysts across the firm's global stock coverage three questions:\n\nHow do you currently classify the company's AI exposure? 7 categories from Enabler down to Disrupted (see  Exhibit 2 )\n\nHow material do you believe AI will be to the investment thesis in the next 1224 months? 5 categories from Core to Thesis down to Insignificant ( Exhibit 3 )\n\nHow do you perceive this company's pricing power (i.e. ability to retain cost savings vs passing through to customers)? 3 categories of High, Neutral, Low.\n\n## What's New in this analysis - 5 key changes and findings\n\n275 stocks ($5.7trn of value) have changed exposure and 310 stocks ($7.8trn of value) have changed materiality. 115 stocks ($2.2trn of value) have changed both exposure and materiality. 76 have moved up in both, 16 have moved down in both. Stocks that have changed categories represent ~$14tr in market cap, $9tr in revenues .\n\n24 stocks (net) moved from Adopters to Enabler/Adopter ;   7 stocks to Disrupted.\n\nAI is now more material for 17% of Financials coverage ; Financials had the highest net AI Materiality increase across   our global coverage. Consumer Staples was at the other end of the spectrum, with net 3% lower importance.\n\n139 Adopters have been designated as having 'High Pricing Power' and have outperformed \"Low Pricing Power\" Adopters by 30% since ChatGPT was released. Since the last survey, our analysts have added 8 companies to the high pricing power & high AI Materiality Adopters category.",
+      "metadata": {
+        "breadcrumbs": "What's New in this analysis - 5 key changes and findings",
+        "char_count": 1724,
+        "num_atomic_chunks": 10,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": ">3,700 stocks",
+              "score": 0.9458691477775574
+            },
+            {
+              "text": "third mapping",
+              "score": 0.8660836219787598
+            },
+            {
+              "text": "three questions",
+              "score": 0.9949949383735657
+            },
+            {
+              "text": "7 categories",
+              "score": 0.994959831237793
+            },
+            {
+              "text": "5 categories",
+              "score": 0.9923977851867676
+            },
+            {
+              "text": "3 categories",
+              "score": 0.9913472533226013
+            },
+            {
+              "text": "5 key changes",
+              "score": 0.9786298871040344
+            },
+            {
+              "text": "275 stocks",
+              "score": 0.9973458051681519
+            },
+            {
+              "text": "$5.7trn",
+              "score": 0.999069333076477
+            },
+            {
+              "text": "310 stocks",
+              "score": 0.9974823594093323
+            },
+            {
+              "text": "$7.8trn",
+              "score": 0.9989826083183289
+            },
+            {
+              "text": "115 stocks",
+              "score": 0.9978448152542114
+            },
+            {
+              "text": "$2.2trn",
+              "score": 0.999081552028656
+            },
+            {
+              "text": "both exposure",
+              "score": 0.7601944804191589
+            },
+            {
+              "text": "76",
+              "score": 0.9918489456176758
+            },
+            {
+              "text": "both",
+              "score": 0.9872149229049683
+            },
+            {
+              "text": "16",
+              "score": 0.9959153532981873
+            },
+            {
+              "text": "both",
+              "score": 0.9747917056083679
+            },
+            {
+              "text": "$14tr",
+              "score": 0.908401608467102
+            },
+            {
+              "text": "$9tr",
+              "score": 0.9985265731811523
+            },
+            {
+              "text": "24 stocks",
+              "score": 0.9971191883087158
+            },
+            {
+              "text": "7 stocks",
+              "score": 0.996975302696228
+            },
+            {
+              "text": "17%",
+              "score": 0.9962210655212402
+            },
+            {
+              "text": "3%",
+              "score": 0.9912886023521423
+            },
+            {
+              "text": "139 Adopters",
+              "score": 0.9564752578735352
+            },
+            {
+              "text": "30%",
+              "score": 0.9963271021842957
+            },
+            {
+              "text": "8 companies",
+              "score": 0.9970731139183044
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9952636957168579
+            },
+            {
+              "text": "ChatGPT",
+              "score": 0.7292709350585938
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "2",
+              "score": 0.8028132915496826
+            }
+          ]
+        },
+        "monetary_values": [
+          "$5.7",
+          "$7.8",
+          "$2.2",
+          "$14",
+          "$9"
+        ],
+        "percentages": [
+          "17%",
+          "3%",
+          "30%"
+        ],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "3 upward materiality ratings changes made for every stock that declined in materiality . This ratio was 1.1 previously; in other words, in the last survey each upward materiality change was matched by a downward change.\n\n## Rate of Change Has Driven Outperformance\n\nWe believe investors predominantly use our survey for three reasons: (1) to understand the rate of change in AI and its corporate adoption; (2) portfolio risk management and (3) stock-picking. We look at the performance of stocks for which our global analysts identified a change in materiality, exposure or both as part of the earlier re-mapping\n\n**Image**\n![fig_p4_1.png](../figures/fig_p4_1.png)\n*AI Analysis:* This visual is a logo or title graphic. It represents \"Tech Diffusion\" as a key theme of 2025 according to Morgan Stanley Research. \n\nThere are no axes, trends, or data insights to evaluate, as it's not a chart, diagram, or data table.\n\nexercise to assess the relevance of AI's rate of change.\n\nIn our second survey, 326 stocks saw a change in AI exposure and 443 stocks saw a change in materiality, as judged by our global analysts. For simplicity, we group these changes into the most common types of re-mapping (i.e. both exposure and materiality up; only materiality increased to Core to Thesis; only exposure increased to Enabler/Adopter). Those stocks that had their exposure and materiality increased by our analysts in Survey 2 outperformed the MSCI World by 25% in 2024, with mostly over in 2H ( Exhibit 13 ). Similar upgrades and re-ratings can be seen across other groupings of changes ( Exhibit 14 ). While there are other factors at play, we believe that AI's rate of change in adoption will continue to be a differentiating factor for stocks over the course of 2025.",
+      "metadata": {
+        "breadcrumbs": "Rate of Change Has Driven Outperformance",
+        "char_count": 1750,
+        "num_atomic_chunks": 6,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "1.1",
+              "score": 0.9784667491912842
+            },
+            {
+              "text": "each",
+              "score": 0.9801469445228577
+            },
+            {
+              "text": "three reasons",
+              "score": 0.9838609099388123
+            },
+            {
+              "text": "both",
+              "score": 0.9718137383460999
+            },
+            {
+              "text": "second survey",
+              "score": 0.9906753897666931
+            },
+            {
+              "text": "326 stocks",
+              "score": 0.9987185597419739
+            },
+            {
+              "text": "443 stocks",
+              "score": 0.9980494379997253
+            },
+            {
+              "text": "both",
+              "score": 0.9847016334533691
+            },
+            {
+              "text": "25%",
+              "score": 0.9940197467803955
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p4_1.png",
+              "score": 0.7937357425689697
+            },
+            {
+              "text": "Exhibit 14",
+              "score": 0.8342262506484985
+            }
+          ],
+          "DATE": [
+            {
+              "text": "2025",
+              "score": 0.9959530830383301
+            },
+            {
+              "text": "2024",
+              "score": 0.9957610964775085
+            },
+            {
+              "text": "2025",
+              "score": 0.9987936019897461
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9851853847503662
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.8622114658355713
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [
+          "25%"
+        ],
+        "quarters": [],
+        "years": [
+          " 2025",
+          " 2024",
+          " 2025"
+        ],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "Exhibit 13: Performance of stocks upgraded both in exposure and materiality in Survey 2 vs MSCI World (Market cap weighted)\n\nExhibit 14: Performance of stocks reclassified in various ways in Survey 2 vs MSCI World (%) - (2H24); average stock return by\n\n**Image**\n*Caption:* Source: Eikon, Morgan Stanley Research\n![fig_p5_1.png](../figures/fig_p5_1.png)\n*AI Analysis:* This visual is a line chart comparing two indices over time. \n\n**Axes:**\n- The x-axis shows the timeline from December 2023 to November 2024.\n- The y-axis represents index values ranging from 95 to 135.\n\n**Trends:**\n- The blue line represents the MSCI World index, which shows a steady increase, with fluctuations, but stays mostly within 95 to 115.\n- The gold line represents \"Stocks With Both Materiality & Exposure Increased\" from Survey 2. This line shows a more significant upward trend, particularly after May 2024, peaking in November 2024.\n\n**Key Insights:**\n- Both indices show growth, but the gold line exhibits a sharper increase post-survey publication.\n- The publication of Survey 2 appears to correlate with increased investor interest or perception of value in the stocks represented by the gold line.\n- The survey's timing aligns with a noticeable divergence in the performance of the two indices.\n\n**Image**\n*Caption:* Source: Eikon, Morgan Stanley Research\n![fig_p5_2.png](../figures/fig_p5_2.png)\n*AI Analysis:* This visual is a bar chart. It displays data on \"EPS Up/Downgrades\" and \"P/E Re/Derating\" across various categories. \n\n- **Axes**: \n  - The y-axis represents percentages, ranging from -10 to 50.\n  - The x-axis lists categories: MSCI World, Up to Significant, Up to Core to Thesis, Up to Enabler/Adopter, Materiality & Exposure Up.\n\n- **Trends and Insights**:\n  - \"Materiality & Exposure Up\" and \"Up to Enabler/Adopter\" show the highest values, especially in \"EPS Up/Downgrades.\"\n  - \"MSCI World\" has the lowest values overall.\n  - Categories generally reflect positive growth, with significant differences in P/E re-rating except for the negative value in \"Up to Enabler/Adopter.\"\n\nThe chart highlights the variability in EPS and P/E changes across different investor categories or strategies.",
+      "metadata": {
+        "breadcrumbs": "Rate of Change Has Driven Outperformance",
+        "char_count": 2187,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "both",
+              "score": 0.8134213089942932
+            },
+            {
+              "text": "two indices",
+              "score": 0.9197624921798706
+            },
+            {
+              "text": "95",
+              "score": 0.8221797347068787
+            },
+            {
+              "text": "135",
+              "score": 0.8261955380439758
+            },
+            {
+              "text": "95",
+              "score": 0.9222312569618225
+            },
+            {
+              "text": "115",
+              "score": 0.9440068006515503
+            },
+            {
+              "text": "Both indices",
+              "score": 0.9820525646209717
+            },
+            {
+              "text": "two indices",
+              "score": 0.9863171577453613
+            },
+            {
+              "text": "-10",
+              "score": 0.8190439939498901
+            },
+            {
+              "text": "50",
+              "score": 0.9281989336013794
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "Survey 2",
+              "score": 0.8530238270759583
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.9570291638374329
+            },
+            {
+              "text": "Survey 2",
+              "score": 0.8965479135513306
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.9572095274925232
+            },
+            {
+              "text": "2H24",
+              "score": 0.7357469201087952
+            },
+            {
+              "text": "fig_p5_1.png",
+              "score": 0.8654876947402954
+            },
+            {
+              "text": "y-axis",
+              "score": 0.9317103624343872
+            },
+            {
+              "text": "MSCI World index",
+              "score": 0.9278740882873535
+            },
+            {
+              "text": "Survey 2",
+              "score": 0.8513593077659607
+            },
+            {
+              "text": "fig_p5_2.png",
+              "score": 0.7774983048439026
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.9382284283638
+            },
+            {
+              "text": "MSCI World",
+              "score": 0.7921402454376221
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Eikon",
+              "score": 0.990111768245697
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.8367393612861633
+            },
+            {
+              "text": "Eikon",
+              "score": 0.9945765733718872
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.8730688095092773
+            }
+          ],
+          "DATE": [
+            {
+              "text": "December 2023",
+              "score": 0.9992955327033997
+            },
+            {
+              "text": "November 2024",
+              "score": 0.9980807900428772
+            },
+            {
+              "text": "May 2024",
+              "score": 0.979621946811676
+            },
+            {
+              "text": "November 2024",
+              "score": 0.999317467212677
+            }
+          ],
+          "TITLE": [
+            {
+              "text": "Increased",
+              "score": 0.778390109539032
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [
+          " 2023",
+          " 2024",
+          " 2024",
+          " 2024"
+        ],
+        "financial_metrics": [
+          "EPS",
+          "P/E"
+        ]
+      }
+    },
+    {
+      "content": "## Latest Rate of Change in Summary\n\nThe changes in our analysts' tagging of stocks has a similar pattern to the last survey. The largest number of stocks to change exposure category were 44 names moving from Adopter to Enabler/Adopters (24 net). This continued to be largely driven by Utilities and Energy stocks being considered to be enabling the build out of the AI infrastructure as well as being beneficiaries of its use. 42 names also moved from \"Don't Know\" classification to \"Adopter\" - so too did 33 stocks from the \"Protected\" category to \"Adopter\" - as companies continue to craft their message to the market around their involvement in this structural theme. Similar to the last survey, the largest market cap changes were between Adopter to Enabler/Adopter and from Protected to Adopter.\n\nWithin these category changes, there has been a far greater concentration in changes in materiality towards (1) Enabler stocks being upgraded in materiality to Core to Thesis and (2) Adopter stocks being upgraded to Moderate   materiality by our analysts. In each case 9% of market cap of Enablers and Adopters was increased to Core to Thesis and Moderate, respectively. Collectively >$6trn of market cap was reclassified in these two ways. As we go on to elaborate, most of this   evolution and upgrading of materiality particularly for the Adopter category -   has come from Banks and Financials. This is a vertical we believe will become increasingly important through 2025, just as Utilities was",
+      "metadata": {
+        "breadcrumbs": "Latest Rate of Change in Summary",
+        "char_count": 1498,
+        "num_atomic_chunks": 3,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "44 names",
+              "score": 0.9983562231063843
+            },
+            {
+              "text": "24 net",
+              "score": 0.8807372450828552
+            },
+            {
+              "text": "42 names",
+              "score": 0.9971398711204529
+            },
+            {
+              "text": "33 stocks",
+              "score": 0.9983324408531189
+            },
+            {
+              "text": "each case",
+              "score": 0.9254653453826904
+            },
+            {
+              "text": "9%",
+              "score": 0.986042857170105
+            },
+            {
+              "text": ">$6trn",
+              "score": 0.7952638268470764
+            },
+            {
+              "text": "two ways",
+              "score": 0.9805825352668762
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Adopter",
+              "score": 0.9691203832626343
+            },
+            {
+              "text": "Adopter",
+              "score": 0.8708663582801819
+            }
+          ],
+          "DATE": [
+            {
+              "text": "2025",
+              "score": 0.9984801411628723
+            }
+          ]
+        },
+        "monetary_values": [
+          "$6"
+        ],
+        "percentages": [
+          "9%"
+        ],
+        "quarters": [],
+        "years": [
+          " 2025"
+        ],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "## through 2024.\n\n**Image**\n*Caption:* Exhibit 15: Global Coverage Rate of Change, Stocks (upper table) and market cap changed (lower table)\n![fig_p6_1.png](../figures/fig_p6_1.png)\n*AI Analysis:* This visual contains data tables with two parts:\n\n**Upper Table: Stocks**\n- **Axes**: \n  - Horizontal: New AI Exposure categories (Enabler/Adopter, Enabler, Adopter, Protected, Don’t Know, Wildcard, Disrupted).\n  - Vertical: Previous AI Exposure categories.\n- **Trends**:\n  - High counts in “Enabler” to “Enabler” (173) and “Adopter” to “Adopter” (1169) indicate consistency in categories.\n  - Most transitions occur from \"Enabler/Adopter\" to other categories, especially Enabler and Adopter.\n  \n**Lower Table: Market Cap Changes ($bn)**\n- **Axes**: \n  - Horizontal: New AI Exposure categories (same as above).\n  - Vertical: Previous AI Exposure categories.\n- **Trends**:\n  - Significant market cap transition in “Adopter” to “Adopter” ($31,912 bn), suggesting stable market",
+      "metadata": {
+        "breadcrumbs": "through 2024.",
+        "char_count": 969,
+        "num_atomic_chunks": 2,
+        "entities": {
+          "DATE": [
+            {
+              "text": "2024",
+              "score": 0.7163861393928528
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p6_1.png",
+              "score": 0.9229178428649902
+            },
+            {
+              "text": "173",
+              "score": 0.8190804123878479
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "two parts",
+              "score": 0.9853390455245972
+            },
+            {
+              "text": "$bn",
+              "score": 0.9956924319267273
+            },
+            {
+              "text": "$31,912 bn",
+              "score": 0.9977898001670837
+            }
+          ]
+        },
+        "monetary_values": [
+          "$31,912"
+        ],
+        "percentages": [],
+        "quarters": [],
+        "years": [
+          " 2024"
+        ],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "*Caption:* Source: FactSet, Morgan Stanley Research\n| Row Lab Adopter Adopte 31,912                | Row Lab Adopter Adopte 31,912                | Disrupted 21     | Don't Know 73   | Enabler 322     | Enabler/Adopte 1,475   | Protected 297   | Wildcard 9      | Grand Total 34,109   |                 |\n|:---------------------------------------------|:---------------------------------------------|:-----------------|:----------------|:----------------|:-----------------------|:----------------|:----------------|:---------------------|:----------------|\n|                                              | Disrupte 3                                   | 549              | 0               | 0               | 0                      | 0               | 27              | 579                  |                 |\n|                                              | Don't Kno 928                                | 0                | 5,596           | 174             | 137                    | 27              | 30              | 6,893                |                 |\n|                                              | Enabler 0                                    | 0                | 3               | 6,799           | 58                     | 2               | 0               | 6,862                |                 |\n|                                              | Enabler/ 426 Protecte                        | 0                | 0               | 36              | 29,199                 | 0               | 10              | 29,672               |                 |\n|                                              | 902 Wildcard 448                             | 0                | 5               | 158             | 25                     | 10,875 21       | 4               | 11,968 3,917         |                 |\n|                                              | New En 647                                   | 15 49            | 15 232          | 31 427          | 55 392                 | 464             | 3,332 43        | 2,253                |                 |\n|                                              | Grand T 35,266                               | 634              | 5,925           | 7,945           | 31,342                 | 11,686          | 3,455           | 96,253               |                 |\n|                                              | 5                                            |                  |                 |                 |                        |                 |                 |                      |                 |\n|                                              |                                              | New AI Exposure  | New AI Exposure | New AI Exposure | New AI Exposure        | New AI Exposure | New AI Exposure | New AI Exposure      | New AI Exposure |\n| AI Exposure Changes (Market Cap Changes $bn) | AI Exposure Changes (Market Cap Changes $bn) | Enabler/ Adopter | Enabler         | Adopter         | Protected              | Don't Know      | Wildcard        | Disrupted            | Grand Total     |\n|                                              | Enabler/Adopter                              | 29,199           | 36              | 426             | 0                      | 0               | 10              | 0                    | 29,672          |\n|                                              | Enabler                                      | 58               | 6,799           | 0               | 2                      | 3               | 0               | 0                    | 6,862           |\n|                                              | Adopter Exposure                             | 1,475            | 322             | 31,912          | 297                    | 73              | 9               | 21                   | 34,109          |\n|                                              | Protected                                    | 25               | 158             | 902             | 10,875                 | 5               | 4               | 0                    | 11,968          |\n|                                              | Don't Know AI                                | 137              | 174             | 928             | 27                     | 5,596           | 30              | 0                    | 6,893           |\n|                                              | Wildcard                                     | 55               | 31              | 448             | 21                     | 15              | 3,332           | 15                   | 3,917           |\n|                                              | Disrupted Previous                           | 0                | 0               | 3               | 0                      | 0               | 27              | 549                  | 579             |\n|                                              | New Entry                                    | 392              | 427             | 647             | 464                    | 232             | 43              | 49                   | 2,253           |\n|                                              | Grand Total                                  | 31,342           | 7,945           | 35,266          | 11,686                 | 5,925           | 3,455           | 634                  | 96,253          |\n\n*AI Analysis:* The table is an analytical summary, presumably by Morgan Stanley Research using data from FactSet, assessing the market impact and categorization of companies regarding AI exposure and adoption. The immediate goal of the table is to categorize and analyze companies based on their engagement with artificial intelligence, grouped into categories like \"Enabler,\" \"Adopter,\" \"Protected,\" and others. \n\n**Structure:** \nThe table is structured into two main sections. The first part lists categories of companies and subcategories (Disrupted, Don't Know, Enabler, Enabler/Adopter, Protected, Wildcard, etc.) associated with a specific number and strategic positioning. Each main category's market cap change (in billions of dollars) is detailed further. \n\nThe second part outlines changes",
+      "metadata": {
+        "breadcrumbs": "through 2024.",
+        "char_count": 6165,
+        "num_atomic_chunks": 1,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "FactSet",
+              "score": 0.9792806506156921
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9893133640289307
+            },
+            {
+              "text": "Row Lab",
+              "score": 0.7002661228179932
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "31,912",
+              "score": 0.8710059523582458
+            },
+            {
+              "text": "31,912",
+              "score": 0.9294271469116211
+            },
+            {
+              "text": "73",
+              "score": 0.8612164258956909
+            },
+            {
+              "text": "1,475",
+              "score": 0.9626391530036926
+            },
+            {
+              "text": "297",
+              "score": 0.8415622115135193
+            },
+            {
+              "text": "34,109",
+              "score": 0.9837079644203186
+            },
+            {
+              "text": "549",
+              "score": 0.7859786748886108
+            },
+            {
+              "text": "0",
+              "score": 0.7045454382896423
+            },
+            {
+              "text": "0",
+              "score": 0.7138791680335999
+            },
+            {
+              "text": "27",
+              "score": 0.7221492528915405
+            },
+            {
+              "text": "579",
+              "score": 0.8971216678619385
+            },
+            {
+              "text": "0",
+              "score": 0.8053962588310242
+            },
+            {
+              "text": "5,596",
+              "score": 0.9786000847816467
+            },
+            {
+              "text": "174",
+              "score": 0.9642212390899658
+            },
+            {
+              "text": "137",
+              "score": 0.9575535655021667
+            },
+            {
+              "text": "27",
+              "score": 0.9351305365562439
+            },
+            {
+              "text": "30",
+              "score": 0.9597964882850647
+            },
+            {
+              "text": "6,893",
+              "score": 0.9768799543380737
+            },
+            {
+              "text": "0",
+              "score": 0.8022329807281494
+            },
+            {
+              "text": "3",
+              "score": 0.8717769384384155
+            },
+            {
+              "text": "6,799",
+              "score": 0.9877912998199463
+            },
+            {
+              "text": "58",
+              "score": 0.8298333883285522
+            },
+            {
+              "text": "2",
+              "score": 0.7522782683372498
+            },
+            {
+              "text": "0",
+              "score": 0.8814892768859863
+            },
+            {
+              "text": "6,862",
+              "score": 0.9877469539642334
+            },
+            {
+              "text": "0",
+              "score": 0.839758574962616
+            },
+            {
+              "text": "0",
+              "score": 0.8798182010650635
+            },
+            {
+              "text": "36",
+              "score": 0.9730081558227539
+            },
+            {
+              "text": "29,199",
+              "score": 0.9841148853302002
+            },
+            {
+              "text": "0",
+              "score": 0.8588895797729492
+            },
+            {
+              "text": "10",
+              "score": 0.9446306228637695
+            },
+            {
+              "text": "29,672",
+              "score": 0.9829031825065613
+            },
+            {
+              "text": "902",
+              "score": 0.7114953398704529
+            },
+            {
+              "text": "0",
+              "score": 0.8797288537025452
+            },
+            {
+              "text": "5",
+              "score": 0.9528954029083252
+            },
+            {
+              "text": "158",
+              "score": 0.969293475151062
+            },
+            {
+              "text": "25",
+              "score": 0.9773790836334229
+            },
+            {
+              "text": "10,875",
+              "score": 0.9969159364700317
+            },
+            {
+              "text": "21",
+              "score": 0.7898893356323242
+            },
+            {
+              "text": "4",
+              "score": 0.9669724702835083
+            },
+            {
+              "text": "11,968",
+              "score": 0.9984112977981567
+            },
+            {
+              "text": "3,917",
+              "score": 0.8814294338226318
+            },
+            {
+              "text": "15 49",
+              "score": 0.8204923868179321
+            },
+            {
+              "text": "15 232",
+              "score": 0.9549912810325623
+            },
+            {
+              "text": "31 427",
+              "score": 0.9531998038291931
+            },
+            {
+              "text": "55 392",
+              "score": 0.9422403573989868
+            },
+            {
+              "text": "464",
+              "score": 0.9785498976707458
+            },
+            {
+              "text": "3,332",
+              "score": 0.9880252480506897
+            },
+            {
+              "text": "43",
+              "score": 0.7829878330230713
+            },
+            {
+              "text": "2,253",
+              "score": 0.9772374033927917
+            },
+            {
+              "text": "35,266",
+              "score": 0.90004563331604
+            },
+            {
+              "text": "634",
+              "score": 0.9530394077301025
+            },
+            {
+              "text": "5,925",
+              "score": 0.9943318367004395
+            },
+            {
+              "text": "7,945",
+              "score": 0.9946792125701904
+            },
+            {
+              "text": "31,342",
+              "score": 0.990704357624054
+            },
+            {
+              "text": "11,686",
+              "score": 0.9977471232414246
+            },
+            {
+              "text": "3,455",
+              "score": 0.9925077557563782
+            },
+            {
+              "text": "96,253",
+              "score": 0.9950370192527771
+            },
+            {
+              "text": "$bn",
+              "score": 0.9138619899749756
+            },
+            {
+              "text": "$bn",
+              "score": 0.828460693359375
+            },
+            {
+              "text": "29,199",
+              "score": 0.979075014591217
+            },
+            {
+              "text": "36",
+              "score": 0.9503909945487976
+            },
+            {
+              "text": "426",
+              "score": 0.9425681829452515
+            },
+            {
+              "text": "0",
+              "score": 0.758762538433075
+            },
+            {
+              "text": "0",
+              "score": 0.8524371385574341
+            },
+            {
+              "text": "10",
+              "score": 0.9132664203643799
+            },
+            {
+              "text": "0",
+              "score": 0.8312281966209412
+            },
+            {
+              "text": "29,672",
+              "score": 0.9323484897613525
+            },
+            {
+              "text": "58",
+              "score": 0.9231804013252258
+            },
+            {
+              "text": "6,799",
+              "score": 0.9908620119094849
+            },
+            {
+              "text": "0",
+              "score": 0.7237526774406433
+            },
+            {
+              "text": "6,862",
+              "score": 0.87237149477005
+            },
+            {
+              "text": "1,475",
+              "score": 0.958738386631012
+            },
+            {
+              "text": "322",
+              "score": 0.8519176840782166
+            },
+            {
+              "text": "31,912",
+              "score": 0.9329476356506348
+            },
+            {
+              "text": "297",
+              "score": 0.9602771997451782
+            },
+            {
+              "text": "73",
+              "score": 0.9279606938362122
+            },
+            {
+              "text": "9",
+              "score": 0.851195752620697
+            },
+            {
+              "text": "21",
+              "score": 0.9377760887145996
+            },
+            {
+              "text": "34,109",
+              "score": 0.991317868232727
+            },
+            {
+              "text": "158",
+              "score": 0.7837367653846741
+            },
+            {
+              "text": "902",
+              "score": 0.7245261073112488
+            },
+            {
+              "text": "10,875",
+              "score": 0.9947793483734131
+            },
+            {
+              "text": "4",
+              "score": 0.7057355046272278
+            },
+            {
+              "text": "0",
+              "score": 0.8834989666938782
+            },
+            {
+              "text": "11,968",
+              "score": 0.9942962527275085
+            },
+            {
+              "text": "137",
+              "score": 0.7129815816879272
+            },
+            {
+              "text": "174",
+              "score": 0.8368374705314636
+            },
+            {
+              "text": "928",
+              "score": 0.8988897204399109
+            },
+            {
+              "text": "27",
+              "score": 0.8819273114204407
+            },
+            {
+              "text": "5,596",
+              "score": 0.974558413028717
+            },
+            {
+              "text": "30",
+              "score": 0.9326289892196655
+            },
+            {
+              "text": "0",
+              "score": 0.9318245649337769
+            },
+            {
+              "text": "6,893",
+              "score": 0.987700879573822
+            },
+            {
+              "text": "55",
+              "score": 0.8740136623382568
+            },
+            {
+              "text": "31",
+              "score": 0.9316803812980652
+            },
+            {
+              "text": "448",
+              "score": 0.9709886908531189
+            }
+          ],
+          "COMMERCIAL_ITEM": [
+            {
+              "text": "Wildcard 9",
+              "score": 0.8778117299079895
+            },
+            {
+              "text": "Wildcard",
+              "score": 0.8371188640594482
+            },
+            {
+              "text": "New En 647",
+              "score": 0.7568274736404419
+            },
+            {
+              "text": "Grand T",
+              "score": 0.9517984390258789
+            },
+            {
+              "text": "Wildcard",
+              "score": 0.8800642490386963
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 16: Materiality increases (% of sector's stocks upgraded) from one survey to the next\n![fig_p6_2.png](../figures/fig_p6_2.png)\n*AI Analysis:* This visual is a bar chart.\n\n**Axes:**\n- X-Axis: Represents various sectors such as Banks, Utilities, Telecoms, etc.\n- Y-Axis: Shows the percentage of stocks upgraded.\n\n**Trends:**\n- From Survey 1 to 2, Banks and Utilities saw the highest percentage of upgrades.\n- The overall trend shows a higher percentage of upgrades in many sectors from Survey 1 to 2 compared to Survey 2 to 3.\n- The percentage generally decreases as you move from left to right across the sectors.\n\n**Key Insights:**\n- Banks had the most significant increase in materiality from Survey 1 to 2.\n- The upgrades from Survey 2 to 3 are less prominent overall compared to Survey 1 to 2.\n- Utilities and Telecom sectors also show notable materiality increases but less than Banks.\n\nSource: Morgan Stanley Research",
+      "metadata": {
+        "breadcrumbs": "through 2024.",
+        "char_count": 949,
+        "num_atomic_chunks": 2,
+        "entities": {
+          "OTHER": [
+            {
+              "text": "fig_p6_2.png",
+              "score": 0.8628117442131042
+            },
+            {
+              "text": "3",
+              "score": 0.7442159056663513
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "Survey 1",
+              "score": 0.7347809672355652
+            },
+            {
+              "text": "Survey 1",
+              "score": 0.7407943606376648
+            },
+            {
+              "text": "Survey 2",
+              "score": 0.7190103530883789
+            },
+            {
+              "text": "2",
+              "score": 0.7103965282440186
+            },
+            {
+              "text": "Survey",
+              "score": 0.7622858881950378
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9930904507637024
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "## US Leadership Widens Further\n\nThe US has been the global leader in Generative AI from the outset - the transformer technology itself, the competition in foundational model building, the willingness to generate the power needed and the consumer and enterprise adoption needed to reach escape velocity.\n\nExposure: However, our latest survey of analysts does show a surprising dichotomy. In terms of the three exposures that matter most for stock performance (Enabler/Adopter, Enabler and Adopter), the US is largely on par with Europe and Japan in terms of proportion of stocks labelled as such. In fact, the US even lags behind Europe in the proportion of stocks considered Enabler/Adopters. Yet, in market cap terms, the US has double the weighting in Enabler/Adopters relative to Europe and quadruple that of APAC.\n\nMateriality: In terms of Materiality of AI to the investment case, the variances are starker still. Stocks where AI is considered at least moderately important to the investment case amount to c25% of European and APAC coverage but a meaningfully higher c40% of US coverage. In market cap terms, US stocks where AI is considered at least moderately important to the investment case represent >70% of the US market; double the level in Europe. And for the most important Core to Thesis categorisation, the US has c15x higher weighting than Europe or Japan, for example.\n\nThe Rest of World catch-up argument: If there is a compelling argument for the gap to close between the US and other regions, we believe it lies in the Moderate Adopter groupings where the weighting of stocks and market value is comparable across the regions. This is also the grouping for which the rate of change argument holds most upside potential, particularly for corporate margins in Europe and Asia.",
+      "metadata": {
+        "breadcrumbs": "US Leadership Widens Further",
+        "char_count": 1789,
+        "num_atomic_chunks": 5,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "three exposures",
+              "score": 0.9691535234451294
+            },
+            {
+              "text": "c25%",
+              "score": 0.9960247278213501
+            },
+            {
+              "text": "c40%",
+              "score": 0.9920535087585449
+            },
+            {
+              "text": ">70%",
+              "score": 0.9492989182472229
+            },
+            {
+              "text": "double",
+              "score": 0.7122743725776672
+            },
+            {
+              "text": "c15x",
+              "score": 0.9511777758598328
+            }
+          ],
+          "LOCATION": [
+            {
+              "text": "US",
+              "score": 0.8108789920806885
+            },
+            {
+              "text": "Europe",
+              "score": 0.8522520661354065
+            },
+            {
+              "text": "Japan",
+              "score": 0.8122986555099487
+            },
+            {
+              "text": "Europe",
+              "score": 0.9120204448699951
+            },
+            {
+              "text": "Europe",
+              "score": 0.9508045315742493
+            },
+            {
+              "text": "US",
+              "score": 0.9576247334480286
+            },
+            {
+              "text": "US",
+              "score": 0.9255986213684082
+            },
+            {
+              "text": "US",
+              "score": 0.9508398771286011
+            },
+            {
+              "text": "Europe",
+              "score": 0.9976022839546204
+            },
+            {
+              "text": "US",
+              "score": 0.961968183517456
+            },
+            {
+              "text": "Europe",
+              "score": 0.983738899230957
+            },
+            {
+              "text": "Japan",
+              "score": 0.9853854775428772
+            },
+            {
+              "text": "US",
+              "score": 0.9893739819526672
+            },
+            {
+              "text": "Europe",
+              "score": 0.9987748265266418
+            },
+            {
+              "text": "Asia",
+              "score": 0.9970391988754272
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "APAC",
+              "score": 0.851097822189331
+            },
+            {
+              "text": "APAC",
+              "score": 0.7739309072494507
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "European",
+              "score": 0.9021411538124084
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [
+          "25%",
+          "40%",
+          "70%"
+        ],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 17: Proportion of stocks and market cap in each exposure and materiality category regionally\n![fig_p7_1.png](../figures/fig_p7_1.png)\n*AI Analysis:* This visual is a set of bar charts.\n\n**Axes:**\n- X-axis: Regions (APAC, Europe, Japan, US).\n- Y-axis: Percentage (0% to 100%).\n\n**Trends and Key Insights:**\n\n1. **AI Exposure:**\n   - **Enabler/Adopter** is most significant in the US, followed by APAC.\n   - **Adopter** category is prominent across all regions.\n   - **Enabler** category is small, with some presence in Europe and APAC.\n\n2. **AI Materiality:**\n   - **Moderate** importance is consistent across all regions.\n   - **Insignificant** category dominates in APAC, Europe, and Japan.\n   - The US shows a notable **Core to Thesis** population.\n\nOverall, the charts highlight regional differences in AI stocks and market cap regarding exposure and materiality, with the US showing a higher significance in both dimensions.\n\nSource: FactSet, Morgan Stanley Research",
+      "metadata": {
+        "breadcrumbs": "US Leadership Widens Further",
+        "char_count": 997,
+        "num_atomic_chunks": 2,
+        "entities": {
+          "OTHER": [
+            {
+              "text": "Exhibit 17",
+              "score": 0.7196524739265442
+            },
+            {
+              "text": "fig_p7_1.png",
+              "score": 0.9223212599754333
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "each exposure",
+              "score": 0.8057588934898376
+            },
+            {
+              "text": "0%",
+              "score": 0.986172080039978
+            },
+            {
+              "text": "100%",
+              "score": 0.9692991375923157
+            },
+            {
+              "text": "both dimensions",
+              "score": 0.9887784719467163
+            }
+          ],
+          "LOCATION": [
+            {
+              "text": "Europe",
+              "score": 0.979032039642334
+            },
+            {
+              "text": "Japan",
+              "score": 0.9865554571151733
+            },
+            {
+              "text": "US",
+              "score": 0.9700750708580017
+            },
+            {
+              "text": "US",
+              "score": 0.9885702729225159
+            },
+            {
+              "text": "Europe",
+              "score": 0.9902792572975159
+            },
+            {
+              "text": "Europe",
+              "score": 0.9601660966873169
+            },
+            {
+              "text": "Japan",
+              "score": 0.9329553246498108
+            },
+            {
+              "text": "US",
+              "score": 0.7473063468933105
+            },
+            {
+              "text": "US",
+              "score": 0.7316111922264099
+            }
+          ],
+          "ORGANIZATION": [
+            {
+              "text": "APAC",
+              "score": 0.8134260773658752
+            },
+            {
+              "text": "FactSet",
+              "score": 0.9705997109413147
+            },
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.987968921661377
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [
+          "0%",
+          "100%"
+        ],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "## Why AI's Rate of Change Will Continue to Matter\n\nThis report maps the evolution of companies' exposure to AI, how that evolution is perceived by analysts and how it is priced by the market. The reason we think this exercise is valuable to investors is because of: (1) the accelerating capabilities of foundational AI infrastructure, and (2) the fact that this technology is diffusing faster than any before it and into more industries than any before it (see here, here and here).\n\nOver the past 24 months, the speed of change in underlying model capabilities has ratcheted up from reliable output that can displace or supplement 5 second or 5 minute tasks, to models that are providing reliable output (i.e. minimal hallucination) for 15 minute to 1 hour tasks. The latest models focussing on inference-time reasoning (i.e. greater \"thought\" rather than memory regurgitation) is more compute intensive but progresses us towards the potential for 5 hour and eventually 5 day tasks being automated or streamlined.\n\n**Table/Chart**\n*Caption:* Exhibit 18: Our Conceptual Roadmap for AI Developments\n![fig_p7_2.png](../figures/fig_p7_2.png)\n*AI Analysis:* This is a diagram illustrating a conceptual roadmap for AI developments.\n\n**Axes:**\n- **Horizontal Axis (AI Direction of Travel):** Represents time and task complexity from left to right, spanning from \"10 Second Tasks\" to \"5 Hour Tasks.\"\n\n**Trends and Key Insights:**\n- **Task Complexity:** Increases from simple tasks like translation and finding synonyms (10 seconds) to more complex tasks like brainstorming and synthesis involving multiple sources (5 hours).\n- **AI Capability Progression:** Shows past, present, and potential future capabilities of AI systems:\n  - **GPT-3.5:** Achieved passable reliability for the simplest tasks (10 seconds).\n  - **GPT-4.0:** Current reliable performance for more complex tasks (15 minutes).\n  - **GPT-X:** Future goal, aimed at handling the most complex tasks (5 hours).\n\nThe roadmap indicates a trajectory of AI becoming capable of handling tasks of increasing complexity and duration.",
+      "metadata": {
+        "breadcrumbs": "Why AI's Rate of Change Will Continue to Matter",
+        "char_count": 2078,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "QUANTITY": [
+            {
+              "text": "5 second",
+              "score": 0.9958523511886597
+            },
+            {
+              "text": "5 minute",
+              "score": 0.9983932375907898
+            },
+            {
+              "text": "15 minute",
+              "score": 0.998547375202179
+            },
+            {
+              "text": "1 hour",
+              "score": 0.9968481659889221
+            },
+            {
+              "text": "5 hour",
+              "score": 0.9991289377212524
+            },
+            {
+              "text": "5 day",
+              "score": 0.998648464679718
+            },
+            {
+              "text": "10 Second",
+              "score": 0.9957534074783325
+            },
+            {
+              "text": "5 Hour",
+              "score": 0.9975945353507996
+            },
+            {
+              "text": "10 seconds",
+              "score": 0.9973874688148499
+            },
+            {
+              "text": "5 hours",
+              "score": 0.9978983998298645
+            },
+            {
+              "text": "10 seconds",
+              "score": 0.9969748258590698
+            },
+            {
+              "text": "15 minutes",
+              "score": 0.9957623481750488
+            },
+            {
+              "text": "5 hours",
+              "score": 0.9978947043418884
+            }
+          ],
+          "OTHER": [
+            {
+              "text": "fig_p7_2.png",
+              "score": 0.8839426040649414
+            },
+            {
+              "text": "GPT-3.5",
+              "score": 0.9667927026748657
+            },
+            {
+              "text": "GPT-4.0",
+              "score": 0.959958016872406
+            },
+            {
+              "text": "GPT-X",
+              "score": 0.9002048373222351
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    },
+    {
+      "content": "Source: Morgan Stanley Research\n\nAfter a year of accelerating global competition in models, the latest major breakthrough was announced by OpenAI in December. The o3 Series supercedes the o1 models released",
+      "metadata": {
+        "breadcrumbs": "Why AI's Rate of Change Will Continue to Matter",
+        "char_count": 204,
+        "num_atomic_chunks": 2,
+        "entities": {
+          "ORGANIZATION": [
+            {
+              "text": "Morgan Stanley Research",
+              "score": 0.9733737707138062
+            },
+            {
+              "text": "OpenAI",
+              "score": 0.9956797361373901
+            }
+          ],
+          "QUANTITY": [
+            {
+              "text": "a year",
+              "score": 0.7508749961853027
+            }
+          ],
+          "DATE": [
+            {
+              "text": "December",
+              "score": 0.9990360736846924
+            }
+          ],
+          "COMMERCIAL_ITEM": [
+            {
+              "text": "o3 Series",
+              "score": 0.9889524579048157
+            },
+            {
+              "text": "o1",
+              "score": 0.8546959161758423
+            }
+          ]
+        },
+        "monetary_values": [],
+        "percentages": [],
+        "quarters": [],
+        "years": [],
+        "financial_metrics": []
+      }
+    }
+  ],
+  "statistics": {
+    "chunks_processed": 20,
+    "comprehend_calls": 20,
+    "comprehend_errors": 0,
+    "entities_extracted": 469,
+    "key_phrases_extracted": 0,
+    "patterns_matched": 68
+  }
+}

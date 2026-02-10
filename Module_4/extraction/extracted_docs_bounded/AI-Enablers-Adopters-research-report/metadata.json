@@ -1,0 +1,72 @@
+{
+  "file": "AI-Enablers-Adopters-research-report.pdf",
+  "processed": "2026-02-08T15:40:50.582040",
+  "tool": "Docling Simple Bounded",
+  "pages": [
+    {
+      "page": 1,
+      "file": "page_1.md",
+      "breadcrumbs": [
+        "Uncovering Alpha in AI's Rate of Change"
+      ],
+      "images": 2,
+      "tables": 1
+    },
+    {
+      "page": 2,
+      "file": "page_2.md",
+      "breadcrumbs": [
+        "Exhibit 6:"
+      ],
+      "images": 4,
+      "tables": 0
+    },
+    {
+      "page": 3,
+      "file": "page_3.md",
+      "breadcrumbs": [
+        "AI's Rate of Return in Charts"
+      ],
+      "images": 6,
+      "tables": 0
+    },
+    {
+      "page": 4,
+      "file": "page_4.md",
+      "breadcrumbs": [
+        "Rate of Change Has Driven Outperformance"
+      ],
+      "images": 1,
+      "tables": 0
+    },
+    {
+      "page": 5,
+      "file": "page_5.md",
+      "breadcrumbs": [
+        "Latest Rate of Change in Summary"
+      ],
+      "images": 2,
+      "tables": 0
+    },
+    {
+      "page": 6,
+      "file": "page_6.md",
+      "breadcrumbs": [
+        "US Leadership Widens Further"
+      ],
+      "images": 2,
+      "tables": 1
+    },
+    {
+      "page": 7,
+      "file": "page_7.md",
+      "breadcrumbs": [
+        "Why AI's Rate of Change Will Continue to Matter"
+      ],
+      "images": 1,
+      "tables": 1
+    }
+  ],
+  "total_images": 18,
+  "total_tables": 3
+}
