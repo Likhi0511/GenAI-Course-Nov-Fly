@@ -78,7 +78,7 @@ def analyze(request: AnalyzeRequest):
 
 
 # This block only runs when the file is executed directly (not imported)
-# Allows running the API with: python main.py
+# Allows running the API with: python open_ai_version.py
 if __name__ == "__main__":
     # Import uvicorn server
     import uvicorn

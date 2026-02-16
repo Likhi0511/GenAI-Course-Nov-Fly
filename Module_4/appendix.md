@@ -36,7 +36,3 @@ Here is the refined pipeline description in Markdown format.
 | **1** | **Extraction** | Raw `.pdf` | `pages/*.md` + `metadata.json` |
 | **2** | **Chunking** | `pages/` (Markdown) | `semantic_chunks.json` |
 | **3** | **Enrichment** | `semantic_chunks.json` | `semantic_chunks_enriched.json` |
-
----
-
-**Would you like me to help you create a README.md file that includes these descriptions along with the CLI commands to run each script?**

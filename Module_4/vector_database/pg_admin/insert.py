@@ -278,11 +278,23 @@ def insert_chunks(conn, cursor, chunks: list, schema: str, table: str, batch_siz
     print(f"Inserting {len(chunks)} chunks into {schema}.{table} (batch_size={batch_size})...")
 
     # Build the rows list once — avoids re-accessing dict keys inside the batch loop
+    import hashlib
+
     rows = []
     for chunk in chunks:
+        # ID resolution priority: 'id' → 'chunk_id' → MD5 hash of content
+        # The MD5 fallback handles chunks that left the enrichment pipeline without
+        # an id field. Using content as the hash input makes the ID deterministic —
+        # re-running the same file always produces the same IDs, so re-loads are safe.
+        text = chunk.get('content') or chunk.get('text', '')
+        chunk_id = (
+            chunk.get('id')
+            or chunk.get('chunk_id')
+            or 'chunk_' + hashlib.md5(text.encode()).hexdigest()[:16]
+        )
         rows.append((
-            chunk.get('id', chunk.get('chunk_id', '')),   # support both id formats
-            chunk.get('content') or chunk.get('text', ''),
+            chunk_id,
+            text,
             json.dumps(chunk.get('metadata', {})),
             chunk['embedding']
         ))

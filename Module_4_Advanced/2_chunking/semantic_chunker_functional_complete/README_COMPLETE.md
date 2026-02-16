@@ -94,7 +94,7 @@ cd semantic-chunker
 ### Basic Usage
 
 ```bash
-python main.py --input-dir path/to/extracted_docs
+python open_ai_version.py --input-dir path/to/extracted_docs
 ```
 
 ### Input Structure
@@ -137,25 +137,25 @@ Input → Load → Parse → Chunk → Merge → Stats → Save → Output
 
 ```bash
 # Default (optimal for most documents)
-python main.py --input-dir docs
+python open_ai_version.py --input-dir docs
 
 # Larger chunks (narrative content)
-python main.py --input-dir docs \
+python open_ai_version.py --input-dir docs \
     --target-size 2500 \
     --min-size 1500 \
     --max-size 4000
 
 # Smaller chunks (FAQs, references)
-python main.py --input-dir docs \
+python open_ai_version.py --input-dir docs \
     --target-size 800 \
     --min-size 400 \
     --max-size 1500
 
 # Disable cross-page merging
-python main.py --input-dir docs --no-merging
+python open_ai_version.py --input-dir docs --no-merging
 
 # Quiet mode (less verbose)
-python main.py --input-dir docs --quiet
+python open_ai_version.py --input-dir docs --quiet
 ```
 
 ## 📚 Module Deep Dive

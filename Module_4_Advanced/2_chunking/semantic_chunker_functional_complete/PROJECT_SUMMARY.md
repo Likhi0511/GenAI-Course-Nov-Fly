@@ -196,7 +196,7 @@ This refactoring serves as a comprehensive example of:
 
 ### Basic Usage
 ```bash
-python main.py --input-dir extracted_docs
+python open_ai_version.py --input-dir extracted_docs
 ```
 
 ### As Library

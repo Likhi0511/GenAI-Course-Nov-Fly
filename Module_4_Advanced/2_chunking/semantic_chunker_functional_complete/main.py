@@ -44,20 +44,20 @@ def main():
         epilog="""
 Examples:
   Basic usage:
-    python main.py --input-dir extracted_docs
+    python open_ai_version.py --input-dir extracted_docs
   
   Custom configuration:
-    python main.py \\
+    python open_ai_version.py \\
         --input-dir extracted_docs \\
         --target-size 2000 \\
         --min-size 1000 \\
         --max-size 3000
   
   Disable cross-page merging:
-    python main.py --input-dir extracted_docs --no-merging
+    python open_ai_version.py --input-dir extracted_docs --no-merging
   
   Quiet mode (less verbose output):
-    python main.py --input-dir extracted_docs --quiet
+    python open_ai_version.py --input-dir extracted_docs --quiet
         """
     )
     

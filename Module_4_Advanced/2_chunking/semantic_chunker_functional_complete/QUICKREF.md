@@ -14,19 +14,19 @@ cd semantic-chunker
 
 ```bash
 # Standard usage
-python main.py --input-dir path/to/docs
+python open_ai_version.py --input-dir path/to/docs
 
 # Custom sizes
-python main.py --input-dir docs --target-size 2000
+python open_ai_version.py --input-dir docs --target-size 2000
 
 # Disable merging
-python main.py --input-dir docs --no-merging
+python open_ai_version.py --input-dir docs --no-merging
 
 # Quiet mode
-python main.py --input-dir docs --quiet
+python open_ai_version.py --input-dir docs --quiet
 
 # Full custom config
-python main.py \
+python open_ai_version.py \
     --input-dir docs \
     --target-size 2500 \
     --min-size 1000 \
