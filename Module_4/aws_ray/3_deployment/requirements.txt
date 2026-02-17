@@ -1,48 +1,58 @@
-# ============================================================================
-# RAY PIPELINE DEPENDENCIES
-# ============================================================================
-# Python 3.9+
+# =============================================================================
+# RAY DOCUMENT PIPELINE — REQUIREMENTS
+# =============================================================================
+# Strategy: pin only where version conflicts are known, let pip resolve the rest.
+# Python 3.9 (Ray 2.9.0 base image)
 
-# Core Ray
+# ── Ray ───────────────────────────────────────────────────────────────────────
 ray[default]==2.9.0
 ray[data]==2.9.0
 
-# AWS Integration
-boto3==1.34.34
-botocore==1.34.34
+# ── AWS ───────────────────────────────────────────────────────────────────────
+# boto3/botocore pinned to match your course environment
+boto3==1.42.5
 
-# Document Processing
-docling==1.8.0
-python-docx==1.1.0
-python-pptx==0.6.23
-openpyxl==3.1.2
+# ── Document processing ───────────────────────────────────────────────────────
+# docling 2.69.1 = last release supporting Python 3.9 (2.70.0 dropped it)
+docling==2.69.1
+python-docx
+python-pptx
+openpyxl
+pypdf
+pymupdf
+pdf2image
+unstructured
+beautifulsoup4
 
-# AI/ML Libraries
-# NOTE: sentence-transformers, transformers, torch removed —
-# embeddings are now generated exclusively via the OpenAI API.
-# AWS Comprehend removed — enrichment is now handled by OpenAI gpt-4o-mini.
-openai==1.10.0
+# ── AI / ML ───────────────────────────────────────────────────────────────────
+openai
 
-# Vector Database
-pinecone-client==3.0.0
+# ── Vector database ───────────────────────────────────────────────────────────
+# pinecone>=3 uses the new unified package (replaces pinecone-client)
+pinecone==8.0.0
 
-# PDF Processing
-pdf2image==1.16.3
-Pillow==10.2.0
+# ── Data ─────────────────────────────────────────────────────────────────────
+pandas
+numpy
+scipy
+scikit-learn
 
-# Data Processing
-pandas==2.2.0
-numpy==1.26.3
+# ── Images ───────────────────────────────────────────────────────────────────
+pillow
 
-# Retry & Progress
-# tenacity: exponential-backoff retry used by openai_embeddings.py
-# tqdm:     batch progress bars in generate_embeddings()
-tenacity==8.2.3
-tqdm==4.66.1
+# ── Retry / progress / display ───────────────────────────────────────────────
+tenacity
+tqdm
+rich
+tabulate          # used by pipeline summary outputs
 
-# Utilities
-python-dotenv==1.0.0
-tabulate==0.9.0
+# ── Logging ──────────────────────────────────────────────────────────────────
+structlog         # used by pipeline stages for structured JSON logs
 
-# Logging and Monitoring
-structlog==24.1.0
+# ── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv
+pydantic>=2.8.0
+pydantic-settings
+requests
+httpx
+aiohttp

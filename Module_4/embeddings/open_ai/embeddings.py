@@ -246,7 +246,7 @@ def generate_embeddings(
 
         # Pick the most privacy-appropriate text field available in each chunk
         texts = [
-            chunk.get('content_sanitised') or chunk.get('content', '')
+            chunk.get('content', '')
             for chunk in batch
         ]
 

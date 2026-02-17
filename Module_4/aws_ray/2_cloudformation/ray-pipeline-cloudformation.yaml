@@ -247,8 +247,8 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8265
           ToPort: 8265
-          CidrIp: 0.0.0.0/0
-          Description: Ray Dashboard
+          CidrIp: !Ref VpcCIDR
+          Description: Ray Dashboard (VPC only)
         - IpProtocol: tcp
           FromPort: 10001
           ToPort: 10001
@@ -332,17 +332,6 @@ Resources:
               - TransitionInDays: 7
                 StorageClass: GLACIER
             ExpirationInDays: 180
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt S3EventLambdaFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: input/
-                  - Name: suffix
-                    Value: .pdf
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -371,10 +360,6 @@ Resources:
         - AttributeName: status
           AttributeType: S
         - AttributeName: created_at
-          AttributeType: S
-        - AttributeName: current_stage
-          AttributeType: S
-        - AttributeName: updated_at
           AttributeType: S
       KeySchema:
         - AttributeName: document_id
@@ -605,16 +590,6 @@ Resources:
                   - !Sub ${ControlTable.Arn}/index/*
                   - !GetAtt AuditTable.Arn
                   - !GetAtt MetricsTable.Arn
-        - PolicyName: ComprehendAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - comprehend:DetectEntities
-                  - comprehend:DetectKeyPhrases
-                  - comprehend:DetectSentiment
-                Resource: '*'
         - PolicyName: SecretsManagerAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -759,6 +734,26 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceArn: !GetAtt DocumentBucket.Arn
+      SourceAccount: !Ref AWS::AccountId
+
+  # S3 bucket notification configured separately to avoid circular dependency
+  # (DocumentBucket cannot reference Lambda directly — Lambda must exist first)
+  BucketNotification:
+    Type: AWS::S3::BucketNotification
+    DependsOn: S3InvokeLambdaPermission
+    Properties:
+      Bucket: !Ref DocumentBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt S3EventLambdaFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: input/
+                  - Name: suffix
+                    Value: .pdf
 
   # ============================================================================
   # ECR REPOSITORY (OPTIONAL)
@@ -927,6 +922,8 @@ Resources:
               Value: !Ref ControlTable
             - Name: DYNAMODB_AUDIT_TABLE
               Value: !Ref AuditTable
+            - Name: DYNAMODB_METRICS_TABLE
+              Value: !Ref MetricsTable
           Secrets:
             - Name: OPENAI_API_KEY
               ValueFrom: !If
@@ -944,6 +941,13 @@ Resources:
               awslogs-group: !Ref RayWorkerLogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ray-worker
+          Command:
+            - /bin/sh
+            - -c
+            - >-
+              ray start
+              --address=$(nslookup -type=SRV _ray._tcp.ray-head.local | awk '/^[^;]/{print $NF}' | head -1 || echo "ray-head:6379")
+              --block
 
   # ============================================================================
   # SNS TOPIC FOR ALARMS (OPTIONAL)

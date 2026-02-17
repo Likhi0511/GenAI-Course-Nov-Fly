@@ -13,7 +13,7 @@
 # Author: Prudhvi
 # Organization: Thoughtworks
 
-FROM rayproject/ray:2.9.0-py39
+FROM rayproject/ray:2.9.0-py313
 
 # Set working directory
 WORKDIR /app

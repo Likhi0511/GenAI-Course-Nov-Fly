@@ -1,0 +1,666 @@
+{
+  "chunks": [
+    {
+      "content": "## Thematics\n\n## Uncovering Alpha in AI's Rate of Change\n\nMore than two years since ChatGPT's launch, we remain in the early innings of AI's diffusion. This is the third iteration of the most comprehensive AI stock mapping exercise in the market. Rate of change continues to drive outperformance, and we believe 2025 will be the year of Agentic AI.\n\nAI's Rate of Change Continues to Surprise: Our first AI Adopter survey was published in January 2024, our second in June 2024. This is our third such analysis. We have been surprised by the continued extent of changes made by our analysts across >3,700 global stocks under coverage. 585 stocks   had their AI exposure or materiality changed ($13trn of market cap). AI model capabilities and costs continue to evolve rapidly and corporate adoption is still low. AI's diffusion is accelerating but decidedly remains in its early innings.\n\nAI's Rate of Change Has Driven Outperformance: Exhibit 1  shows the 2H24 outperformance of stocks which previously saw their exposure and materiality increased. Looking forward, overweight rated stocks matching these criteria in this latest survey have 29% upside to price targets. We explain how to access and use our database and sees three opportunities ahead: (1) Enablers with rising materiality; (2) Adopters with pricing power; (3) Financials with AI 'Rate of Change' tailwinds.\n\n2025 - Agentic AI Adopters: As in previous tech cycles, the equity markets are poised for Semiconductor leadership to give way to the Software Layer. That process is underway. Simply put, AI Agents give \"agency\" to software programs. In other words AI Adopter companies can move from the reactive \"chatbot phase\" to the proactive \"task-fulfillment phase\" of AI; entailing broad productivity gains. We believe 2025 will be a year of Agentic AI, robust enterprise adoption, outperformance of favoured Agentic plays, positive surprises in model capabilities, greater breadth of monetisation and thus diminishing focus on ROI debates.",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 1994,
+        "num_atomic_chunks": 6,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [],
+          "DATE": [
+            "2025",
+            "[REDACTED_DATE]",
+            "[REDACTED_DATE]",
+            "2H24"
+          ],
+          "GPE": [],
+          "MONEY": [
+            "$13trn"
+          ]
+        },
+        "key_phrases": [
+          "AI's diffusion",
+          "AI Adopter survey",
+          "outperformance of stocks",
+          "Agentic AI",
+          "corporate adoption"
+        ],
+        "monetary_values": [
+          "$13"
+        ]
+      },
+      "content_sanitised": "## Thematics\n\n## Uncovering Alpha in AI's Rate of Change\n\nMore than two years since ChatGPT's launch, we remain in the early innings of AI's diffusion. This is the third iteration of the most comprehensive AI stock mapping exercise in the market. Rate of change continues to drive outperformance, and we believe 2025 will be the year of Agentic AI.\n\nAI's Rate of Change Continues to Surprise: Our first AI Adopter survey was published in [REDACTED_DATE], our second in [REDACTED_DATE]. This is our third such analysis. We have been surprised by the continued extent of changes made by our analysts across >3,700 global stocks under coverage. 585 stocks had their AI exposure or materiality changed ($13trn of market cap). AI model capabilities and costs continue to evolve rapidly and corporate adoption is still low. AI's diffusion is accelerating but decidedly remains in its early innings.\n\nAI's Rate of Change Has Driven Outperformance: Exhibit 1 shows the 2H24 outperformance of stocks which previously saw their exposure and materiality increased. Looking forward, overweight rated stocks matching these criteria in this latest survey have 29% upside to price targets. We explain how to access and use our database and sees three opportunities ahead: (1) Enablers with rising materiality; (2) Adopters with pricing power; (3) Financials with AI 'Rate of Change' tailwinds.\n\n2025 - Agentic AI Adopters: As in previous tech cycles, the equity markets are poised for Semiconductor leadership to give way to the Software Layer. That process is underway. Simply put, AI Agents give \"agency\" to software programs. In other words AI Adopter companies can move from the reactive \"chatbot phase\" to the proactive \"task-fulfillment phase\" of AI; entailing broad productivity gains. We believe 2025 will be a year of Agentic AI, robust enterprise adoption, outperformance of favoured Agentic plays, positive surprises in model capabilities, greater breadth of monetisation and thus diminishing focus on ROI debates."
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 1 : Stock returns where both materiality and exposure were increased\n![fig_p1_1.png](../figures/fig_p1_1.png)\n*AI Analysis:* This is a line chart.\n\n**Axes:**\n- The x-axis represents time from December 2023 to November 2024.\n- The y-axis represents stock returns, indexed to 100.\n\n**Trends:**\n- The \"Stocks With Both AI Materiality & Exposure Increased\" line (gold) shows consistent growth, especially from June onward, peaking in November.\n- The \"MSCI World\" line (blue) follows a steadier path with slight fluctuations and modest growth.\n\n**Key Insights:**\n- Stocks with AI focus show a significant upward trend compared to the MSCI World, reflecting stronger performance when both AI materiality and exposure are increased.\n\nSource: Eikon, MS Research. Past performance is no guarantee of future results. Results shown do not include transaction costs.\n\n**Image**\n![fig_p1_2.png](../figures/fig_p1_2.png)\n*AI Analysis:* The image displays a logo with the text \"GLOBAL INSIGHT.\" There are no axes, trends, or data points to analyze as it is not a chart, diagram, or data table.",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 1103,
+        "num_atomic_chunks": 3,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "MS Research",
+            "Eikon"
+          ],
+          "DATE": [
+            "December 2023",
+            "November 2024",
+            "June",
+            "November"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "Stock returns",
+          "AI materiality",
+          "Stocks with AI focus",
+          "MSCI World",
+          "Performance trends"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "**Image** *Caption:* Exhibit 1 : Stock returns where both materiality and exposure were increased ![fig_p1_1.png](../figures/fig_p1_1.png) *AI Analysis:* This is a line chart. **Axes:** - The x-axis represents time from December 2023 to November 2024. - The y-axis represents stock returns, indexed to 100. **Trends:** - The \"Stocks With Both AI Materiality & Exposure Increased\" line (gold) shows consistent growth, especially from June onward, peaking in November. - The \"MSCI World\" line (blue) follows a steadier path with slight fluctuations and modest growth. **Key Insights:** - Stocks with AI focus show a significant upward trend compared to the MSCI World, reflecting stronger performance when both AI materiality and exposure are increased. Source: Eikon, MS Research. Past performance is no guarantee of future results. Results shown do not include transaction costs. **Image** ![fig_p1_2.png](../figures/fig_p1_2.png) *AI Analysis:* The image displays a logo with the text \"GLOBAL INSIGHT.\" There are no axes, trends, or data points to analyze as it is not a chart, diagram, or data table."
+    },
+    {
+      "content": "| 0                                                                                                    | 1                |\n|:-----------------------------------------------------------------------------------------------------|:-----------------|\n| Morgan Stanley & Co. International Edward Stanley Equity Strategist Edward.Stanley@morganstanley.com | +44 20 7425-0840 |\n| Todd Castagno, CFA, CPA GVAT Strategist Todd.Castagno@morganstanley.com                              | +1 212 761-6893  |\n| Keith Weiss, CFA Equity Analyst Keith.Weiss@morganstanley.com                                        | +1 212 761-4149  |\n| Matias Ovrum Equity Strategist Matias.Ovrum@morganstanley.com                                        | +44 20 7425-9902 |\n| Qingyi Huang Equity Strategist Qingyi.Huang@morganstanley.com                                        | +1 212 296-4837  |\n| Elizabeth Porter, CFA Equity Analyst Elizabeth.E.Porter@morganstanley.com                            | +1 212 761-3632  |\n| Jasper Lin Equity Strategist Jasper.Lin@morganstanley.com                                            | +1 212 761-0837  |\n| Michelle M. Weaver, CFA Equity Strategist Michelle.M.Weaver@morganstanley.com                        | +1 212 296-5254  |\n\n*AI Analysis:* The purpose of this table is to provide contact information for various professionals at Morgan Stanley, specifically equity strategists and analysts. The structure of the table is simple, consisting of two columns: the first column lists the names, titles, and email addresses of the individuals, and the second column provides their respective phone numbers.\n\nKey information includes:\n\n1. **Names and Positions**: Each row lists a professional's name along with their designation\u2014either as an Equity Strategist or Equity Analyst\u2014often followed by professional qualifications such as CFA or CPA.\n\n2. **Contact Information**: For each professional, the table provides their email address and phone number, indicating their availability for contact through these channels.\n\nThis table is likely intended for use within the financial industry or",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 2100,
+        "num_atomic_chunks": 1,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]",
+            "[REDACTED_NAME]"
+          ],
+          "ORGANIZATION": [
+            "Morgan Stanley"
+          ],
+          "DATE": [],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "Equity Strategist",
+          "Equity Analyst",
+          "CFA",
+          "GVAT Strategist",
+          "Contact Information"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "| Morgan Stanley & Co. International [REDACTED_NAME] Equity Strategist [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME], CFA, CPA GVAT Strategist [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME], CFA Equity Analyst [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME] Equity Strategist [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME] Equity Strategist [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME], CFA Equity Analyst [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME] Equity Strategist [REDACTED_EMAIL] | [REDACTED_PHONE] |\n| [REDACTED_NAME], CFA Equity Strategist [REDACTED_EMAIL] | [REDACTED_PHONE] |"
+    },
+    {
+      "content": "Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality.\n\nMorgan Stanley does and seeks to do business with companies covered in Morgan Stanley Research. As a result, investors should be aware that the firm may have a conflict of interest that could affect the objectivity of Morgan Stanley Research. Investors should consider Morgan Stanley Research as only a single factor in making their investment decision.\n\nFor analyst certification and other important disclosures, refer to the Disclosure Section, located at the end of this report.\n\n+= Analysts employed by non-U.S. affiliates are not registered with FINRA, may not be associated persons of the member and may not be subject to FINRA restrictions on communications with a subject company, public appearances and trading securities held by a research analyst account.",
+      "metadata": {
+        "breadcrumbs": "Uncovering Alpha in AI's Rate of Change",
+        "char_count": 863,
+        "num_atomic_chunks": 4,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley"
+          ],
+          "DATE": [],
+          "GPE": [
+            "U.S."
+          ],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "excel database",
+          "AI exposure",
+          "investors conflict of interest",
+          "Morgan Stanley Research",
+          "analyst certification"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality.\n\n[ORGANIZATION] does and seeks to do business with companies covered in [ORGANIZATION] Research. As a result, investors should be aware that the firm may have a conflict of interest that could affect the objectivity of [ORGANIZATION] Research. Investors should consider [ORGANIZATION] Research as only a single factor in making their investment decision.\n\nFor analyst certification and other important disclosures, refer to the Disclosure Section, located at the end of this report.\n\n+= Analysts employed by non-U.S. affiliates are not registered with FINRA, may not be associated persons of the member and may not be subject to FINRA restrictions on communications with a subject company, public appearances and trading securities held by a research analyst account."
+    },
+    {
+      "content": "## Mapping AI's Rate of Change in Charts\n\n**Image**\n*Caption:* Exhibit 2: Morgan Stanley classification for how AI Rate of Change \"Exposure\" is scored\n![fig_p2_1.png](../figures/fig_p2_1.png)\n*AI Analysis:* This is a diagram. It visually represents a classification system for a company's AI exposure according to Morgan Stanley.\n\nAxes and Layout:\n- Horizontal Axis: Indicates the increasing importance of AI exposure from left to right.\n\nKey Components:\n- Categories: Listed from left to right are \"Disrupted,\" \"Wildcard,\" \"Don\u2019t Know,\" \"Protected,\" \"Adopter,\" \"Enabler,\" and \"Enabler & Adopter.\"\n\nTrends and Insights:\n- The progression suggests a shift from uncertainty or minimal relevance in AI (\"Disrupted,\" \"Wildcard\") to strategic and integral use of AI (\"Enabler & Adopter\").\n- The positioning also indicates an increasing level of engagement or integration of AI within a company's operations.\n\nSource: Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 4: Most analyst reclassifications are by multiple increments to the upside and downside\n![fig_p2_2.png](../figures/fig_p2_2.png)\n*AI Analysis:* This is a chart. \n\n**Axes:**\n- **X-axis:** Displays the magnitude of change in increments, ranging from -5 to 5.\n- **Y-axis:** Represents the number of analyst reclassifications, ranging from 0 to 140.\n\n**Trends:**\n- Most reclassifications occur at increments of +1 and +2, with significant peaks.\n- Positive changes dominate, especially at increments +1 and +2.\n- Exposure and materiality changes increase more on the positive side compared to negative.\n\n**Key Insights:**\n- The most common changes are +1 and +2, indicating analysts frequently reclassify by these increments.\n- Positive reclassifications are more frequent than negative, suggesting an overall optimistic adjustment trend.\n- Materiality changes lead at +2, indicating a focus on significant positive material changes.",
+      "metadata": {
+        "breadcrumbs": "Mapping AI's Rate of Change in Charts",
+        "char_count": 1889,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley"
+          ],
+          "DATE": [],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "AI Rate of Change",
+          "analyst reclassifications",
+          "strategic use of AI",
+          "materiality changes",
+          "positive adjustments"
+        ],
+        "monetary_values": []
+      }
+    },
+    {
+      "content": "Source: Morgan Stanley Research; Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality\n\n## Exhibit 6:\n\nAI Agent Infrastructure and Vendor plays within the Software layer - stocks in bold represent our favoured equities within the Agentic AI theme\n\nSource: Morgan Stanley Research; Last Price - MDB - $246, CFLT - $29, ESTC - $101, PATH - $13, APPN - $33, CRM - $332, MSFT - $423, TEAM - $250, WDAY - $252, NOW - $1073, SAP - 235, REL - \u00a337, HUBS - $702, GTLB - $59, FRSH - $16, ASAN - $20, BOX - $31\n\n**Image**\n*Caption:* Exhibit 3: Morgan Stanley classification for how AI Rate of Change \"Materiality\" is scored\n![fig_p2_3.png](../figures/fig_p2_3.png)\n*AI Analysis:* This visual is a chart. \n\n**Axes and Elements:**\n- **Horizontal Axis:** Represents \"Increasing Importance\" of AI to the investment thesis of a company.\n- **Categories:** Insignificant, Don't Know, Moderate, Significant, Core to Thesis.\n\n**Trends and Key Insights:**\n- As AI importance increases from \"Insignificant\" to \"Core to Thesis,\" investment materiality improves.\n- Movement to higher importance (rightward) is indicated with a \"+1\" suggesting positive scoring.\n- Moving to lower importance (leftward) is indicated with a \"-1\" suggesting negative scoring.\n\nThis chart classifies the significance of AI in a company\u2019s investment strategy and scores it accordingly.\n\nSource: Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 5: Steady progress is being made by companies in conveying their investment and equity story as it relates to AI\n![fig_p2_4.png](../figures/fig_p2_4.png)\n*AI Analysis:* This visual is a chart with bar graphs. The chart compares the perception of companies' ability to convey their investment and equity stories related to AI over three surveys.\n\n**Axes:**\n- **X-axis:** Three surveys (Survey 1, Survey 2, Survey 3).\n- **Y-axis:** Percentage, ranging from 0% to 80%.\n\n**Key Insights:**\n- There is a declining trend in the \"Insignificant/Don't Know\" category from 73% in Survey 1 to 67% in Survey 3.\n- The \"Core/Significant/Moderate\" category is gradually increasing from 27% in Survey 1 to 33% in Survey 3.\n- This indicates steady progress by companies in conveying their AI-related investment and equity stories over time.",
+      "metadata": {
+        "breadcrumbs": "Exhibit 6:",
+        "char_count": 2259,
+        "num_atomic_chunks": 7,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley"
+          ],
+          "DATE": [],
+          "GPE": [],
+          "MONEY": [
+            "$246",
+            "$29",
+            "$101",
+            "$13",
+            "$33",
+            "$332",
+            "$423",
+            "$250",
+            "$252",
+            "$1073",
+            "$235",
+            "\u00a337",
+            "$702",
+            "$59",
+            "$16",
+            "$20",
+            "$31"
+          ]
+        },
+        "key_phrases": [
+          "AI Agent Infrastructure",
+          "Investment Thesis",
+          "Equities within the Agentic AI theme",
+          "Conveying investment story",
+          "Investment materiality"
+        ],
+        "monetary_values": [
+          "$246",
+          "$29",
+          "$101",
+          "$13",
+          "$33",
+          "$332",
+          "$423",
+          "$250",
+          "$252",
+          "$1073",
+          "$702",
+          "$59",
+          "$16",
+          "$20",
+          "$31"
+        ]
+      },
+      "content_sanitised": "Source: [REDACTED_ORGANIZATION] Research; Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality\n\n## Exhibit 6:\n\nAI Agent Infrastructure and Vendor plays within the Software layer - stocks in bold represent our favoured equities within the Agentic AI theme\n\nSource: [REDACTED_ORGANIZATION] Research; Last Price - MDB - $246, CFLT - $29, ESTC - $101, PATH - $13, APPN - $33, CRM - $332, MSFT - $423, TEAM - $250, WDAY - $252, NOW - $1073, SAP - 235, REL - \u00a337, HUBS - $702, GTLB - $59, FRSH - $16, ASAN - $20, BOX - $31\n\n**Image**\n*Caption:* Exhibit 3: [REDACTED_ORGANIZATION] classification for how AI Rate of Change \"Materiality\" is scored\n![fig_p2_3.png](../figures/fig_p2_3.png)\n*AI Analysis:* This visual is a chart. \n\n**Axes and Elements:**\n- **Horizontal Axis:** Represents \"Increasing Importance\" of AI to the investment thesis of a company.\n- **Categories:** Insignificant, Don't Know, Moderate, Significant, Core to Thesis.\n\n**Trends and Key Insights:**\n- As AI importance increases from \"Insignificant\" to \"Core to Thesis,\" investment materiality improves.\n- Movement to higher importance (rightward) is indicated with a \"+1\" suggesting positive scoring.\n- Moving to lower importance (leftward) is indicated with a \"-1\" suggesting negative scoring.\n\nThis chart classifies the significance of AI in a company\u2019s investment strategy and scores it accordingly.\n\nSource: [REDACTED_ORGANIZATION] Research\n\n**Image**\n*Caption:* Exhibit 5: Steady progress is being made by companies in conveying their investment and equity story as it relates to AI\n![fig_p2_4.png](../figures/fig_p2_4.png)\n*AI Analysis:* This visual is a chart with bar graphs. The chart compares the perception of companies' ability to convey their investment and equity stories related to AI over three surveys.\n\n**Axes:**\n- **X-axis:** Three surveys (Survey 1, Survey 2, Survey 3).\n- **Y-axis:** Percentage, ranging from 0% to 80%.\n\n**Key Insights:**\n- There is a declining trend in the \"Insignificant/Don't Know\" category from 73% in Survey 1 to 67% in Survey 3.\n- The \"Core/Significant/Moderate\" category is gradually increasing from 27% in Survey 1 to 33% in Survey 3.\n- This indicates steady progress by companies in conveying their AI-related investment and equity stories over time."
+    },
+    {
+      "content": "Source: Morgan Stanley Research; Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality\n\n## AI's Rate of Return in Charts\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_1.png](../figures/fig_p3_1.png)\n*AI Analysis:* This is a chart comparing \"Enabler/Adopters Core to Thesis\" and \"Enabler/Adopter Significant\" over time.\n\n**Axes:**\n- **X-axis:** Timeline from December 2023 to October 2024.\n- **Y-axis:** Index value ranging from 80 to 160.\n\n**Trends:**\n- Both lines start around the 100 mark but diverge in trends.\n- The \"Enabler/Adopters Core to Thesis\" (green line) shows a general upward trend, experiencing fluctuations but steadily increasing.\n- The \"Enabler/Adopter Significant\" (blue line) also shows growth but at a slower pace. It has more pronounced dips and peaks.\n\n**Key Insights:**\n- The \"Core to Thesis\" category experiences more consistent growth compared to \"Significant.\"\n- Both categories show overall positive trends, indicating growth or improvement over the timeframe.\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_2.png](../figures/fig_p3_2.png)\n*AI Analysis:* The visual is a chart comparing \"High Pricing Power Adopters\" and \"Low Pricing Power Adopters.\"\n\n**Axes:**\n- **X-axis:** Time (from December 23 to October 24).\n- **Y-axis:** Index level ranging from 90 to 140.\n\n**Trends:**\n- The \"High Pricing Power Adopters\" (green line) consistently remains above the \"Low Pricing Power Adopters\" (blue line).\n- The green line shows a general upward trend, with fluctuations but overall significant growth.\n- The blue line shows a moderate upward trend, with less volatility and smaller growth compared to the green line.\n\n**Key Insights:**\n- Companies with high pricing power exhibit stronger growth in their index levels than those with low pricing power.\n- There is a noticeable positive correlation between pricing power and performance over the time period shown.",
+      "metadata": {
+        "breadcrumbs": "AI's Rate of Return in Charts",
+        "char_count": 1978,
+        "num_atomic_chunks": 4,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley",
+            "FactSet"
+          ],
+          "DATE": [
+            "[REDACTED_DATE]",
+            "[REDACTED_DATE]",
+            "[REDACTED_DATE]",
+            "[REDACTED_DATE]"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "AI exposure and materiality",
+          "Enabler/Adopters Core to Thesis",
+          "High Pricing Power Adopters",
+          "Index value trends",
+          "Pricing power and performance"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "Source: Morgan Stanley Research; Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality\n\n## AI's Rate of Return in Charts\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_1.png](../figures/fig_p3_1.png)\n*AI Analysis:* This is a chart comparing \"Enabler/Adopters Core to Thesis\" and \"Enabler/Adopter Significant\" over time.\n\n**Axes:**\n- **X-axis:** Timeline from [REDACTED_DATE] to [REDACTED_DATE].\n- **Y-axis:** Index value ranging from 80 to 160.\n\n**Trends:**\n- Both lines start around the 100 mark but diverge in trends.\n- The \"Enabler/Adopters Core to Thesis\" (green line) shows a general upward trend, experiencing fluctuations but steadily increasing.\n- The \"Enabler/Adopter Significant\" (blue line) also shows growth but at a slower pace. It has more pronounced dips and peaks.\n\n**Key Insights:**\n- The \"Core to Thesis\" category experiences more consistent growth compared to \"Significant.\"\n- Both categories show overall positive trends, indicating growth or improvement over the timeframe.\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_2.png](../figures/fig_p3_2.png)\n*AI Analysis:* The visual is a chart comparing \"High Pricing Power Adopters\" and \"Low Pricing Power Adopters.\"\n\n**Axes:**\n- **X-axis:** Time (from [REDACTED_DATE] to [REDACTED_DATE]).\n- **Y-axis:** Index level ranging from 90 to 140.\n\n**Trends:**\n- The \"High Pricing Power Adopters\" (green line) consistently remains above the \"Low Pricing Power Adopters\" (blue line).\n- The green line shows a general upward trend, with fluctuations but overall significant growth.\n- The blue line shows a moderate upward trend, with less volatility and smaller growth compared to the green line.\n\n**Key Insights:**\n- Companies with high pricing power exhibit stronger growth in their index levels than those with low pricing power.\n- There is a noticeable positive correlation between pricing power and performance over the time period shown."
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 11: Market cap weighted performance by AI Exposure categorisation during 2024\n![fig_p3_3.png](../figures/fig_p3_3.png)\n*AI Analysis:* The visual is a chart.\n\n**Axes:**\n- **X-axis:** Time period from December 2023 to October 2024.\n- **Y-axis:** Market cap weighted performance index ranging from 90 to 140.\n\n**Trends:**\n- **Enabler/Adopter** shows the highest performance increase over time.\n- **Adopter** and **Enabler** also show significant upward trends.\n- **S&P500 Return** and **Protected** remain relatively stable, with minor fluctuations.\n- **Wildcard** and **Disrupted** show less growth, with **Disrupted** being the lowest performer.\n\n**Key Insights:**\n- Companies classified as **Enabler/Adopter** lead in performance.\n- **Disrupted** category underperforms throughout the year.\n- There's a clear positive impact on performance for companies with higher AI exposure.\n\nSource: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 8: Adopters Significant vs Insignificant\n![fig_p3_4.png](../figures/fig_p3_4.png)\n*AI Analysis:* The visual is a line chart.\n\n**Axes:**\n- **X-axis:** Time period from December 2023 to December 2024.\n- **Y-axis:** Index value ranging from 80 to 150.\n\n**Trends:**\n- **Adopter Insignificant (blue line):** Shows a generally stable trend with slight fluctuations, maintaining between 100 and 120.\n- **Adopter Significant (green line):** Exhibits a rising trend, with more noticeable fluctuations compared to the blue line. Starting around 100, it peaks above 140 by mid-2024 and remains higher than the blue line throughout most of the period.\n\n**Key Insights:**\n- \"Adopter Significant\" demonstrates greater growth and volatility compared to \"Adopter Insignificant.\"\n- Both lines start similarly, but \"Adopter Significant\" diverges and maintains a lead throughout the year.",
+      "metadata": {
+        "breadcrumbs": "AI's Rate of Return in Charts",
+        "char_count": 1845,
+        "num_atomic_chunks": 3,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "FactSet",
+            "Morgan Stanley Research"
+          ],
+          "DATE": [
+            "2024",
+            "December 2023",
+            "October 2024",
+            "December 2024",
+            "mid-2024"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "Market cap weighted performance",
+          "AI Exposure categorisation",
+          "Adopter Significant growth",
+          "Performance index trends",
+          "Enabler/Adopter category"
+        ],
+        "monetary_values": []
+      }
+    },
+    {
+      "content": "Source: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 10: Disrupted Core vs Moderate\n![fig_p3_5.png](../figures/fig_p3_5.png)\n*AI Analysis:* The visual is a line chart.\n\n**Axes:**\n- **X-axis:** Timeline from December 23 to October 24, indicating months.\n- **Y-axis:** Values ranging from 50 to 110.\n\n**Trends:**\n- The \"Disrupted Core to Thesis\" line starts near 100, fluctuates mildly, and then experiences a significant drop around February. It fluctuates until October, stabilizing around 60.\n- The \"Disrupted Moderate\" line also starts near 100, maintains a more stable pattern, with minor fluctuations, mostly remaining above 90 until a drop near October.\n\n**Key Insights:**\n- \"Disrupted Core to Thesis\" shows volatility with a marked decline early in the period.\n- \"Disrupted Moderate\" is more stable but ends with a decline in October.\n- Both datasets exhibit a drop near the end, indicating possible external influencing factors affecting both metrics similarly by October.\n\nSource: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_6.png](../figures/fig_p3_6.png)\n*AI Analysis:* This visual is a chart, specifically a bar chart.\n\n### Axes Description:\n- **X-Axis:** Different categories: Median, Enabler/Adopter, Enabler, Adopter, Protected, Wildcard, Disrupted.\n- **Y-Axis (Left):** EV/Sales ratio ranging from 0.0x to 3.5x.\n- **Y-Axis (Right):** P/E ratio ranging from 12x to 22x.\n\n### Key Trends and Insights:\n- **EV/Sales (blue bars):** The \"Adopter\" category has the highest EV/Sales ratio, surpassing 3.0x. The \"Protected\" category has the lowest, below 1.0x.\n- **P/E (gold markers):** All categories have similar P/E ratios, generally between 14x and 17x, with some variation. The highest is slightly above 17x in the \"Enabler\" category.\n\nOverall, the\n\n## Executive Summary",
+      "metadata": {
+        "breadcrumbs": "Executive Summary",
+        "char_count": 1852,
+        "num_atomic_chunks": 5,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley"
+          ],
+          "DATE": [
+            "[REDACTED_DATE]",
+            "October 24",
+            "December 23"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "Disrupted Core to Thesis",
+          "Disrupted Moderate",
+          "EV/Sales ratio",
+          "Adopter category",
+          "P/E ratio"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "Source: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Exhibit 10: Disrupted Core vs Moderate\n![fig_p3_5.png](../figures/fig_p3_5.png)\n*AI Analysis:* The visual is a line chart.\n\n**Axes:**\n- **X-axis:** Timeline from December 23 to October 24, indicating months.\n- **Y-axis:** Values ranging from 50 to 110.\n\n**Trends:**\n- The \"Disrupted Core to Thesis\" line starts near 100, fluctuates mildly, and then experiences a significant drop around [REDACTED_DATE]. It fluctuates until October, stabilizing around 60.\n- The \"Disrupted Moderate\" line also starts near 100, maintains a more stable pattern, with minor fluctuations, mostly remaining above 90 until a drop near October.\n\n**Key Insights:**\n- \"Disrupted Core to Thesis\" shows volatility with a marked decline early in the period.\n- \"Disrupted Moderate\" is more stable but ends with a decline in October.\n- Both datasets exhibit a drop near the end, indicating possible external influencing factors affecting both metrics similarly by October.\n\nSource: FactSet, Morgan Stanley Research\n\n**Image**\n*Caption:* Source: FactSet, Morgan Stanley Research\n![fig_p3_6.png](../figures/fig_p3_6.png)\n*AI Analysis:* This visual is a chart, specifically a bar chart.\n\n### Axes Description:\n- **X-Axis:** Different categories: Median, Enabler/Adopter, Enabler, Adopter, Protected, Wildcard, Disrupted.\n- **Y-Axis (Left):** EV/Sales ratio ranging from 0.0x to 3.5x.\n- **Y-Axis (Right):** P/E ratio ranging from 12x to 22x.\n\n### Key Trends and Insights:\n- **EV/Sales (blue bars):** The \"Adopter\" category has the highest EV/Sales ratio, surpassing 3.0x. The \"Protected\" category has the lowest, below 1.0x.\n- **P/E (gold markers):** All categories have similar P/E ratios, generally between 14x and 17x, with some variation. The highest is slightly above 17x in the \"Enabler\" category.\n\nOverall, the\n\n## Executive Summary"
+    },
+    {
+      "content": "## Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality.\n\nThis is the third mapping (see here and here) of our global coverage as it pertains to the speed of AI adoption. We have again asked Morgan Stanley Research analysts across the firm's global stock coverage three questions:\n\nHow do you currently classify the company's AI exposure? 7 categories from Enabler down to Disrupted (see  Exhibit 2 )\n\nHow material do you believe AI will be to the investment thesis in the next 1224 months? 5 categories from Core to Thesis down to Insignificant ( Exhibit 3 )\n\nHow do you perceive this company's pricing power (i.e. ability to retain cost savings vs passing through to customers)? 3 categories of High, Neutral, Low.\n\n## What's New in this analysis - 5 key changes and findings\n\n275 stocks ($5.7trn of value) have changed exposure and 310 stocks ($7.8trn of value) have changed materiality. 115 stocks ($2.2trn of value) have changed both exposure and materiality. 76 have moved up in both, 16 have moved down in both. Stocks that have changed categories represent ~$14tr in market cap, $9tr in revenues .\n\n24 stocks (net) moved from Adopters to Enabler/Adopter ;   7 stocks to Disrupted.\n\nAI is now more material for 17% of Financials coverage ; Financials had the highest net AI Materiality increase across   our global coverage. Consumer Staples was at the other end of the spectrum, with net 3% lower importance.\n\n139 Adopters have been designated as having 'High Pricing Power' and have outperformed \"Low Pricing Power\" Adopters by 30% since ChatGPT was released. Since the last survey, our analysts have added 8 companies to the high pricing power & high AI Materiality Adopters category.",
+      "metadata": {
+        "breadcrumbs": "What's New in this analysis - 5 key changes and findings",
+        "char_count": 1724,
+        "num_atomic_chunks": 10,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "[REDACTED_ORGANIZATION]"
+          ],
+          "DATE": [
+            "[REDACTED_DATE]"
+          ],
+          "GPE": [],
+          "MONEY": [
+            "$5.7trn",
+            "$7.8trn",
+            "$2.2trn",
+            "~$14tr",
+            "$9tr"
+          ]
+        },
+        "key_phrases": [
+          "AI exposure mapping",
+          "Materiality of AI",
+          "Financials coverage",
+          "High Pricing Power",
+          "AI adoption changes"
+        ],
+        "monetary_values": [
+          "$5.7",
+          "$7.8",
+          "$2.2",
+          "$14",
+          "$9"
+        ]
+      },
+      "content_sanitised": "## Please click here for the full excel database of >3,700 stocks mapped by AI exposure and materiality.\n\nThis is the third mapping (see here and here) of our global coverage as it pertains to the speed of AI adoption. We have again asked [REDACTED_ORGANIZATION] Research analysts across the firm's global stock coverage three questions:\n\nHow do you currently classify the company's AI exposure? 7 categories from Enabler down to Disrupted (see  Exhibit 2 )\n\nHow material do you believe AI will be to the investment thesis in the next 1224 months? 5 categories from Core to Thesis down to Insignificant ( Exhibit 3 )\n\nHow do you perceive this company's pricing power (i.e. ability to retain cost savings vs passing through to customers)? 3 categories of High, Neutral, Low.\n\n## What's New in this analysis - 5 key changes and findings\n\n275 stocks ($5.7trn of value) have changed exposure and 310 stocks ($7.8trn of value) have changed materiality. 115 stocks ($2.2trn of value) have changed both exposure and materiality. 76 have moved up in both, 16 have moved down in both. Stocks that have changed categories represent ~$14tr in market cap, $9tr in revenues.\n\n24 stocks (net) moved from Adopters to Enabler/Adopter; 7 stocks to Disrupted.\n\nAI is now more material for 17% of Financials coverage; Financials had the highest net AI Materiality increase across our global coverage. Consumer Staples was at the other end of the spectrum, with net 3% lower importance.\n\n139 Adopters have been designated as having 'High Pricing Power' and have outperformed 'Low Pricing Power' Adopters by 30% since [REDACTED_DATE]. Since the last survey, our analysts have added 8 companies to the high pricing power & high AI Materiality Adopters category."
+    },
+    {
+      "content": "3 upward materiality ratings changes made for every stock that declined in materiality . This ratio was 1.1 previously; in other words, in the last survey each upward materiality change was matched by a downward change.\n\n## Rate of Change Has Driven Outperformance\n\nWe believe investors predominantly use our survey for three reasons: (1) to understand the rate of change in AI and its corporate adoption; (2) portfolio risk management and (3) stock-picking. We look at the performance of stocks for which our global analysts identified a change in materiality, exposure or both as part of the earlier re-mapping\n\n**Image**\n![fig_p4_1.png](../figures/fig_p4_1.png)\n*AI Analysis:* This visual is a logo or title graphic. It represents \"Tech Diffusion\" as a key theme of 2025 according to Morgan Stanley Research. \n\nThere are no axes, trends, or data insights to evaluate, as it's not a chart, diagram, or data table.\n\nexercise to assess the relevance of AI's rate of change.\n\nIn our second survey, 326 stocks saw a change in AI exposure and 443 stocks saw a change in materiality, as judged by our global analysts. For simplicity, we group these changes into the most common types of re-mapping (i.e. both exposure and materiality up; only materiality increased to Core to Thesis; only exposure increased to Enabler/Adopter). Those stocks that had their exposure and materiality increased by our analysts in Survey 2 outperformed the MSCI World by 25% in 2024, with mostly over in 2H ( Exhibit 13 ). Similar upgrades and re-ratings can be seen across other groupings of changes ( Exhibit 14 ). While there are other factors at play, we believe that AI's rate of change in adoption will continue to be a differentiating factor for stocks over the course of 2025.",
+      "metadata": {
+        "breadcrumbs": "Rate of Change Has Driven Outperformance",
+        "char_count": 1750,
+        "num_atomic_chunks": 6,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "[REDACTED_ORGANIZATION]",
+            "Morgan Stanley"
+          ],
+          "DATE": [
+            "2025",
+            "2024",
+            "2H"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "upward materiality ratings changes",
+          "rate of change",
+          "portfolio risk management",
+          "stock-picking",
+          "AI exposure and materiality"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "3 upward materiality ratings changes made for every stock that declined in materiality. This ratio was 1.1 previously; in other words, in the last survey each upward materiality change was matched by a downward change.\n\n## Rate of Change Has Driven Outperformance\n\nWe believe investors predominantly use our survey for three reasons: (1) to understand the rate of change in AI and its corporate adoption; (2) portfolio risk management and (3) stock-picking. We look at the performance of stocks for which our global analysts identified a change in materiality, exposure or both as part of the earlier re-mapping\n\n**Image**\n![fig_p4_1.png](../figures/fig_p4_1.png)\n*AI Analysis:* This visual is a logo or title graphic. It represents \"Tech Diffusion\" as a key theme of 2025 according to [REDACTED_ORGANIZATION].\n\nThere are no axes, trends, or data insights to evaluate, as it's not a chart, diagram, or data table.\n\nexercise to assess the relevance of AI's rate of change.\n\nIn our second survey, 326 stocks saw a change in AI exposure and 443 stocks saw a change in materiality, as judged by our global analysts. For simplicity, we group these changes into the most common types of re-mapping (i.e. both exposure and materiality up; only materiality increased to Core to Thesis; only exposure increased to Enabler/Adopter). Those stocks that had their exposure and materiality increased by our analysts in Survey 2 outperformed the MSCI World by 25% in 2024, with mostly over in 2H ( Exhibit 13 ). Similar upgrades and re-ratings can be seen across other groupings of changes ( Exhibit 14 ). While there are other factors at play, we believe that AI's rate of change in adoption will continue to be a differentiating factor for stocks over the course of 2025."
+    },
+    {
+      "content": "Exhibit 13: Performance of stocks upgraded both in exposure and materiality in Survey 2 vs MSCI World (Market cap weighted)\n\nExhibit 14: Performance of stocks reclassified in various ways in Survey 2 vs MSCI World (%) - (2H24); average stock return by\n\n**Image**\n*Caption:* Source: Eikon, Morgan Stanley Research\n![fig_p5_1.png](../figures/fig_p5_1.png)\n*AI Analysis:* This visual is a line chart comparing two indices over time. \n\n**Axes:**\n- The x-axis shows the timeline from December 2023 to November 2024.\n- The y-axis represents index values ranging from 95 to 135.\n\n**Trends:**\n- The blue line represents the MSCI World index, which shows a steady increase, with fluctuations, but stays mostly within 95 to 115.\n- The gold line represents \"Stocks With Both Materiality & Exposure Increased\" from Survey 2. This line shows a more significant upward trend, particularly after May 2024, peaking in November 2024.\n\n**Key Insights:**\n- Both indices show growth, but the gold line exhibits a sharper increase post-survey publication.\n- The publication of Survey 2 appears to correlate with increased investor interest or perception of value in the stocks represented by the gold line.\n- The survey's timing aligns with a noticeable divergence in the performance of the two indices.\n\n**Image**\n*Caption:* Source: Eikon, Morgan Stanley Research\n![fig_p5_2.png](../figures/fig_p5_2.png)\n*AI Analysis:* This visual is a bar chart. It displays data on \"EPS Up/Downgrades\" and \"P/E Re/Derating\" across various categories. \n\n- **Axes**: \n  - The y-axis represents percentages, ranging from -10 to 50.\n  - The x-axis lists categories: MSCI World, Up to Significant, Up to Core to Thesis, Up to Enabler/Adopter, Materiality & Exposure Up.\n\n- **Trends and Insights**:\n  - \"Materiality & Exposure Up\" and \"Up to Enabler/Adopter\" show the highest values, especially in \"EPS Up/Downgrades.\"\n  - \"MSCI World\" has the lowest values overall.\n  - Categories generally reflect positive growth, with significant differences in P/E re-rating except for the negative value in \"Up to Enabler/Adopter.\"\n\nThe chart highlights the variability in EPS and P/E changes across different investor categories or strategies.",
+      "metadata": {
+        "breadcrumbs": "Rate of Change Has Driven Outperformance",
+        "char_count": 2187,
+        "num_atomic_chunks": 4,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "[REDACTED_ORGANIZATION]"
+          ],
+          "DATE": [
+            "December 2023",
+            "November 2024",
+            "2H24",
+            "May 2024"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "Performance of stocks",
+          "MSCI World index",
+          "Survey publication",
+          "EPS Up/Downgrades",
+          "P/E Re/Derating"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "Exhibit 13: Performance of stocks upgraded both in exposure and materiality in Survey 2 vs MSCI World (Market cap weighted)\n\nExhibit 14: Performance of stocks reclassified in various ways in Survey 2 vs MSCI World (%) - (2H24); average stock return by\n\n**Image**\n*Caption:* Source: Eikon, [REDACTED_ORGANIZATION] Research\n![fig_p5_1.png](../figures/fig_p5_1.png)\n*AI Analysis:* This visual is a line chart comparing two indices over time. \n\n**Axes:**\n- The x-axis shows the timeline from December 2023 to November 2024.\n- The y-axis represents index values ranging from 95 to 135.\n\n**Trends:**\n- The blue line represents the MSCI World index, which shows a steady increase, with fluctuations, but stays mostly within 95 to 115.\n- The gold line represents \"Stocks With Both Materiality & Exposure Increased\" from Survey 2. This line shows a more significant upward trend, particularly after May 2024, peaking in November 2024.\n\n**Key Insights:**\n- Both indices show growth, but the gold line exhibits a sharper increase post-survey publication.\n- The publication of Survey 2 appears to correlate with increased investor interest or perception of value in the stocks represented by the gold line.\n- The survey's timing aligns with a noticeable divergence in the performance of the two indices.\n\n**Image**\n*Caption:* Source: Eikon, [REDACTED_ORGANIZATION] Research\n![fig_p5_2.png](../figures/fig_p5_2.png)\n*AI Analysis:* This visual is a bar chart. It displays data on \"EPS Up/Downgrades\" and \"P/E Re/Derating\" across various categories. \n\n- **Axes**: \n  - The y-axis represents percentages, ranging from -10 to 50.\n  - The x-axis lists categories: MSCI World, Up to Significant, Up to Core to Thesis, Up to Enabler/Adopter, Materiality & Exposure Up.\n\n- **Trends and Insights**:\n  - \"Materiality & Exposure Up\" and \"Up to Enabler/Adopter\" show the highest values, especially in \"EPS Up/Downgrades.\"\n  - \"MSCI World\" has the lowest values overall.\n  - Categories generally reflect positive growth, with significant differences in P/E re-rating except for the negative value in \"Up to Enabler/Adopter.\"\n\nThe chart highlights the variability in EPS and P/E changes across different investor categories or strategies."
+    },
+    {
+      "content": "## Latest Rate of Change in Summary\n\nThe changes in our analysts' tagging of stocks has a similar pattern to the last survey. The largest number of stocks to change exposure category were 44 names moving from Adopter to Enabler/Adopters (24 net). This continued to be largely driven by Utilities and Energy stocks being considered to be enabling the build out of the AI infrastructure as well as being beneficiaries of its use. 42 names also moved from \"Don't Know\" classification to \"Adopter\" - so too did 33 stocks from the \"Protected\" category to \"Adopter\" - as companies continue to craft their message to the market around their involvement in this structural theme. Similar to the last survey, the largest market cap changes were between Adopter to Enabler/Adopter and from Protected to Adopter.\n\nWithin these category changes, there has been a far greater concentration in changes in materiality towards (1) Enabler stocks being upgraded in materiality to Core to Thesis and (2) Adopter stocks being upgraded to Moderate   materiality by our analysts. In each case 9% of market cap of Enablers and Adopters was increased to Core to Thesis and Moderate, respectively. Collectively >$6trn of market cap was reclassified in these two ways. As we go on to elaborate, most of this   evolution and upgrading of materiality particularly for the Adopter category -   has come from Banks and Financials. This is a vertical we believe will become increasingly important through 2025, just as Utilities was",
+      "metadata": {
+        "breadcrumbs": "Latest Rate of Change in Summary",
+        "char_count": 1498,
+        "num_atomic_chunks": 3,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Banks",
+            "Financials"
+          ],
+          "DATE": [
+            "2025"
+          ],
+          "GPE": [],
+          "MONEY": [
+            "$6trn"
+          ]
+        },
+        "key_phrases": [
+          "analysts' tagging of stocks",
+          "changes in exposure category",
+          "Utilities and Energy stocks",
+          "market cap changes",
+          "upgraded in materiality"
+        ],
+        "monetary_values": [
+          "$6"
+        ]
+      },
+      "content_sanitised": "## Latest Rate of Change in Summary\n\nThe changes in our analysts' tagging of stocks has a similar pattern to the last survey. The largest number of stocks to change exposure category were 44 names moving from Adopter to Enabler/Adopters (24 net). This continued to be largely driven by Utilities and Energy stocks being considered to be enabling the build out of the AI infrastructure as well as being beneficiaries of its use. 42 names also moved from \"Don't Know\" classification to \"Adopter\" - so too did 33 stocks from the \"Protected\" category to \"Adopter\" - as companies continue to craft their message to the market around their involvement in this structural theme. Similar to the last survey, the largest market cap changes were between Adopter to Enabler/Adopter and from Protected to Adopter.\n\nWithin these category changes, there has been a far greater concentration in changes in materiality towards (1) Enabler stocks being upgraded in materiality to Core to Thesis and (2) Adopter stocks being upgraded to Moderate materiality by our analysts. In each case 9% of market cap of Enablers and Adopters was increased to Core to Thesis and Moderate, respectively. Collectively >$6trn of market cap was reclassified in these two ways. As we go on to elaborate, most of this evolution and upgrading of materiality particularly for the Adopter category - has come from Banks and Financials. This is a vertical we believe will become increasingly important through 2025, just as Utilities was"
+    },
+    {
+      "content": "## through 2024.\n\n**Image**\n*Caption:* Exhibit 15: Global Coverage Rate of Change, Stocks (upper table) and market cap changed (lower table)\n![fig_p6_1.png](../figures/fig_p6_1.png)\n*AI Analysis:* This visual contains data tables with two parts:\n\n**Upper Table: Stocks**\n- **Axes**: \n  - Horizontal: New AI Exposure categories (Enabler/Adopter, Enabler, Adopter, Protected, Don\u2019t Know, Wildcard, Disrupted).\n  - Vertical: Previous AI Exposure categories.\n- **Trends**:\n  - High counts in \u201cEnabler\u201d to \u201cEnabler\u201d (173) and \u201cAdopter\u201d to \u201cAdopter\u201d (1169) indicate consistency in categories.\n  - Most transitions occur from \"Enabler/Adopter\" to other categories, especially Enabler and Adopter.\n  \n**Lower Table: Market Cap Changes ($bn)**\n- **Axes**: \n  - Horizontal: New AI Exposure categories (same as above).\n  - Vertical: Previous AI Exposure categories.\n- **Trends**:\n  - Significant market cap transition in \u201cAdopter\u201d to \u201cAdopter\u201d ($31,912 bn), suggesting stable market",
+      "metadata": {
+        "breadcrumbs": "through 2024.",
+        "char_count": 969,
+        "num_atomic_chunks": 2,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [],
+          "DATE": [
+            "2024"
+          ],
+          "GPE": [],
+          "MONEY": [
+            "$31,912 bn"
+          ]
+        },
+        "key_phrases": [
+          "Global Coverage Rate",
+          "Stocks",
+          "Market Cap Changes",
+          "AI Exposure categories",
+          "Stable market transition"
+        ],
+        "monetary_values": [
+          "$31,912"
+        ]
+      },
+      "content_sanitised": "## through 2024.\n\n**Image**\n*Caption:* Exhibit 15: Global Coverage Rate of Change, Stocks (upper table) and market cap changed (lower table)\n![fig_p6_1.png](../figures/fig_p6_1.png)\n*AI Analysis:* This visual contains data tables with two parts:\n\n**Upper Table: Stocks**\n- **Axes:** \n  - Horizontal: New AI Exposure categories (Enabler/Adopter, Enabler, Adopter, Protected, Don\u2019t Know, Wildcard, Disrupted).\n  - Vertical: Previous AI Exposure categories.\n- **Trends:**\n  - High counts in \u201cEnabler\u201d to \u201cEnabler\u201d (173) and \u201cAdopter\u201d to \u201cAdopter\u201d (1169) indicate consistency in categories.\n  - Most transitions occur from \"Enabler/Adopter\" to other categories, especially Enabler and Adopter.\n  \n**Lower Table: Market Cap Changes [REDACTED_MONEY]**\n- **Axes:** \n  - Horizontal: New AI Exposure categories (same as above).\n  - Vertical: Previous AI Exposure categories.\n- **Trends:**\n  - Significant market cap transition in \u201cAdopter\u201d to \u201cAdopter\u201d ([REDACTED_MONEY]), suggesting stable market"
+    },
+    {
+      "content": "*Caption:* Source: FactSet, Morgan Stanley Research\n| Row Lab Adopter Adopte 31,912                | Row Lab Adopter Adopte 31,912                | Disrupted 21     | Don't Know 73   | Enabler 322     | Enabler/Adopte 1,475   | Protected 297   | Wildcard 9      | Grand Total 34,109   |                 |\n|:---------------------------------------------|:---------------------------------------------|:-----------------|:----------------|:----------------|:-----------------------|:----------------|:----------------|:---------------------|:----------------|\n|                                              | Disrupte 3                                   | 549              | 0               | 0               | 0                      | 0               | 27              | 579                  |                 |\n|                                              | Don't Kno 928                                | 0                | 5,596           | 174             | 137                    | 27              | 30              | 6,893                |                 |\n|                                              | Enabler 0                                    | 0                | 3               | 6,799           | 58                     | 2               | 0               | 6,862                |                 |\n|                                              | Enabler/ 426 Protecte                        | 0                | 0               | 36              | 29,199                 | 0               | 10              | 29,672               |                 |\n|                                              | 902 Wildcard 448                             | 0                | 5               | 158             | 25                     | 10,875 21       | 4               | 11,968 3,917         |                 |\n|                                              | New En 647                                   | 15 49            | 15 232          | 31 427          | 55 392                 | 464             | 3,332 43        | 2,253                |                 |\n|                                              | Grand T 35,266                               | 634              | 5,925           | 7,945           | 31,342                 | 11,686          | 3,455           | 96,253               |                 |\n|                                              | 5                                            |                  |                 |                 |                        |                 |                 |                      |                 |\n|                                              |                                              | New AI Exposure  | New AI Exposure | New AI Exposure | New AI Exposure        | New AI Exposure | New AI Exposure | New AI Exposure      | New AI Exposure |\n| AI Exposure Changes (Market Cap Changes $bn) | AI Exposure Changes (Market Cap Changes $bn) | Enabler/ Adopter | Enabler         | Adopter         | Protected              | Don't Know      | Wildcard        | Disrupted            | Grand Total     |\n|                                              | Enabler/Adopter                              | 29,199           | 36              | 426             | 0                      | 0               | 10              | 0                    | 29,672          |\n|                                              | Enabler                                      | 58               | 6,799           | 0               | 2                      | 3               | 0               | 0                    | 6,862           |\n|                                              | Adopter Exposure                             | 1,475            | 322             | 31,912          | 297                    | 73              | 9               | 21                   | 34,109          |\n|                                              | Protected                                    | 25               | 158             | 902             | 10,875                 | 5               | 4               | 0                    | 11,968          |\n|                                              | Don't Know AI                                | 137              | 174             | 928             | 27                     | 5,596           | 30              | 0                    | 6,893           |\n|                                              | Wildcard                                     | 55               | 31              | 448             | 21                     | 15              | 3,332           | 15                   | 3,917           |\n|                                              | Disrupted Previous                           | 0                | 0               | 3               | 0                      | 0               | 27              | 549                  | 579             |\n|                                              | New Entry                                    | 392              | 427             | 647             | 464                    | 232             | 43              | 49                   | 2,253           |\n|                                              | Grand Total                                  | 31,342           | 7,945           | 35,266          | 11,686                 | 5,925           | 3,455           | 634                  | 96,253          |\n\n*AI Analysis:* The table is an analytical summary, presumably by Morgan Stanley Research using data from FactSet, assessing the market impact and categorization of companies regarding AI exposure and adoption. The immediate goal of the table is to categorize and analyze companies based on their engagement with artificial intelligence, grouped into categories like \"Enabler,\" \"Adopter,\" \"Protected,\" and others. \n\n**Structure:** \nThe table is structured into two main sections. The first part lists categories of companies and subcategories (Disrupted, Don't Know, Enabler, Enabler/Adopter, Protected, Wildcard, etc.) associated with a specific number and strategic positioning. Each main category's market cap change (in billions of dollars) is detailed further. \n\nThe second part outlines changes",
+      "metadata": {
+        "breadcrumbs": "through 2024.",
+        "char_count": 6165,
+        "num_atomic_chunks": 1,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley",
+            "FactSet"
+          ],
+          "DATE": [],
+          "GPE": [],
+          "MONEY": [
+            "$bn"
+          ]
+        },
+        "key_phrases": [
+          "AI Exposure Changes",
+          "Market Cap Changes",
+          "Enabler/Adopter",
+          "Protected",
+          "Adopter Exposure"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "*Caption:* Source: FactSet, Morgan Stanley Research | Row Lab Adopter Adopte 31,912 | Row Lab Adopter Adopte 31,912 | Disrupted 21 | Don't Know 73 | Enabler 322 | Enabler/Adopte 1,475 | Protected 297 | Wildcard 9 | Grand Total 34,109 | | |:---------------------------------------------|:---------------------------------------------|:-----------------|:----------------|:----------------|:-----------------------|:----------------|:----------------|:---------------------|:----------------| | | Disrupte 3 | 549 | 0 | 0 | 0 | 0 | 0 | 27 | 579 | | | Don't Kno 928 | 0 | 5,596 | 174 | 137 | 27 | 30 | 6,893 | | | Enabler 0 | 0 | 3 | 6,799 | 58 | 2 | 0 | 6,862 | | | Enabler/ 426 Protecte | 0 | 0 | 36 | 29,199 | 0 | 10 | 29,672 | | | 902 Wildcard 448 | 0 | 5 | 158 | 25 | 10,875 21 | 4 | 11,968 3,917 | | | New En 647 | 15 49 | 15 232 | 31 427 | 55 392 | 464 | 3,332 43 | 2,253 | | | Grand T 35,266 | 634 | 5,925 | 7,945 | 31,342 | 11,686 | 3,455 | 96,253 | | | 5 | | | | | | | | | | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | New AI Exposure | AI Exposure Changes (Market Cap Changes $bn) | AI Exposure Changes (Market Cap Changes $bn) | Enabler/ Adopter | Enabler | Adopter | Protected | Don't Know | Wildcard | Disrupted | Grand Total | | | Enabler/Adopter | 29,199 | 36 | 426 | 0 | 0 | 10 | 0 | 29,672 | | | Enabler | 58 | 6,799 | 0 | 2 | 3 | 0 | 0 | 6,862 | | | Adopter Exposure | 1,475 | 322 | 31,912 | 297 | 73 | 9 | 21 | 34,109 | | | Protected | 25 | 158 | 902 | 10,875 | 5 | 4 | 0 | 11,968 | | | Don't Know AI | 137 | 174 | 928 | 27 | 5,596 | 30 | 0 | 6,893 | | | Wildcard | 55 | 31 | 448 | 21 | 15 | 3,332 | 15 | 3,917 | | | Disrupted Previous | 0 | 0 | 3 | 0 | 0 | 27 | 549 | 579 | | | New Entry | 392 | 427 | 647 | 464 | 232 | 43 | 49 | 2,253 | | | Grand Total | 31,342 | 7,945 | 35,266 | 11,686 | 5,925 | 3,455 | 634 | 96,253 |"
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 16: Materiality increases (% of sector's stocks upgraded) from one survey to the next\n![fig_p6_2.png](../figures/fig_p6_2.png)\n*AI Analysis:* This visual is a bar chart.\n\n**Axes:**\n- X-Axis: Represents various sectors such as Banks, Utilities, Telecoms, etc.\n- Y-Axis: Shows the percentage of stocks upgraded.\n\n**Trends:**\n- From Survey 1 to 2, Banks and Utilities saw the highest percentage of upgrades.\n- The overall trend shows a higher percentage of upgrades in many sectors from Survey 1 to 2 compared to Survey 2 to 3.\n- The percentage generally decreases as you move from left to right across the sectors.\n\n**Key Insights:**\n- Banks had the most significant increase in materiality from Survey 1 to 2.\n- The upgrades from Survey 2 to 3 are less prominent overall compared to Survey 1 to 2.\n- Utilities and Telecom sectors also show notable materiality increases but less than Banks.\n\nSource: Morgan Stanley Research",
+      "metadata": {
+        "breadcrumbs": "through 2024.",
+        "char_count": 949,
+        "num_atomic_chunks": 2,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley"
+          ],
+          "DATE": [],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "Materiality increases",
+          "Percentage of stocks upgraded",
+          "Banks and Utilities upgrades",
+          "Survey trends",
+          "Notable materiality increases"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "**Image**\n*Caption:* Exhibit 16: Materiality increases (% of sector's stocks upgraded) from one survey to the next\n![fig_p6_2.png](../figures/fig_p6_2.png)\n*AI Analysis:* This visual is a bar chart.\n\n**Axes:**\n- X-Axis: Represents various sectors such as [REDACTED_TYPE], Utilities, Telecoms, etc.\n- Y-Axis: Shows the percentage of stocks upgraded.\n\n**Trends:**\n- From Survey 1 to 2, [REDACTED_TYPE] and Utilities saw the highest percentage of upgrades.\n- The overall trend shows a higher percentage of upgrades in many sectors from Survey 1 to 2 compared to Survey 2 to 3.\n- The percentage generally decreases as you move from left to right across the sectors.\n\n**Key Insights:**\n- [REDACTED_TYPE] had the most significant increase in materiality from Survey 1 to 2.\n- The upgrades from Survey 2 to 3 are less prominent overall compared to Survey 1 to 2.\n- Utilities and Telecom sectors also show notable materiality increases but less than [REDACTED_TYPE].\n\nSource: Morgan Stanley Research"
+    },
+    {
+      "content": "## US Leadership Widens Further\n\nThe US has been the global leader in Generative AI from the outset - the transformer technology itself, the competition in foundational model building, the willingness to generate the power needed and the consumer and enterprise adoption needed to reach escape velocity.\n\nExposure: However, our latest survey of analysts does show a surprising dichotomy. In terms of the three exposures that matter most for stock performance (Enabler/Adopter, Enabler and Adopter), the US is largely on par with Europe and Japan in terms of proportion of stocks labelled as such. In fact, the US even lags behind Europe in the proportion of stocks considered Enabler/Adopters. Yet, in market cap terms, the US has double the weighting in Enabler/Adopters relative to Europe and quadruple that of APAC.\n\nMateriality: In terms of Materiality of AI to the investment case, the variances are starker still. Stocks where AI is considered at least moderately important to the investment case amount to c25% of European and APAC coverage but a meaningfully higher c40% of US coverage. In market cap terms, US stocks where AI is considered at least moderately important to the investment case represent >70% of the US market; double the level in Europe. And for the most important Core to Thesis categorisation, the US has c15x higher weighting than Europe or Japan, for example.\n\nThe Rest of World catch-up argument: If there is a compelling argument for the gap to close between the US and other regions, we believe it lies in the Moderate Adopter groupings where the weighting of stocks and market value is comparable across the regions. This is also the grouping for which the rate of change argument holds most upside potential, particularly for corporate margins in Europe and Asia.",
+      "metadata": {
+        "breadcrumbs": "US Leadership Widens Further",
+        "char_count": 1789,
+        "num_atomic_chunks": 5,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [],
+          "DATE": [],
+          "GPE": [
+            "US",
+            "Europe",
+            "Japan",
+            "APAC"
+          ],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "US market cap",
+          "Generative AI",
+          "stock performance",
+          "investment case",
+          "AI importance"
+        ],
+        "monetary_values": []
+      }
+    },
+    {
+      "content": "**Image**\n*Caption:* Exhibit 17: Proportion of stocks and market cap in each exposure and materiality category regionally\n![fig_p7_1.png](../figures/fig_p7_1.png)\n*AI Analysis:* This visual is a set of bar charts.\n\n**Axes:**\n- X-axis: Regions (APAC, Europe, Japan, US).\n- Y-axis: Percentage (0% to 100%).\n\n**Trends and Key Insights:**\n\n1. **AI Exposure:**\n   - **Enabler/Adopter** is most significant in the US, followed by APAC.\n   - **Adopter** category is prominent across all regions.\n   - **Enabler** category is small, with some presence in Europe and APAC.\n\n2. **AI Materiality:**\n   - **Moderate** importance is consistent across all regions.\n   - **Insignificant** category dominates in APAC, Europe, and Japan.\n   - The US shows a notable **Core to Thesis** population.\n\nOverall, the charts highlight regional differences in AI stocks and market cap regarding exposure and materiality, with the US showing a higher significance in both dimensions.\n\nSource: FactSet, Morgan Stanley Research",
+      "metadata": {
+        "breadcrumbs": "US Leadership Widens Further",
+        "char_count": 997,
+        "num_atomic_chunks": 2,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "FactSet",
+            "Morgan Stanley"
+          ],
+          "DATE": [],
+          "GPE": [
+            "APAC",
+            "Europe",
+            "Japan",
+            "US"
+          ],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "AI Exposure",
+          "AI Materiality",
+          "regional differences",
+          "market cap",
+          "stocks"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "**Image** *Caption:* Exhibit 17: Proportion of stocks and market cap in each exposure and materiality category regionally ![fig_p7_1.png](../figures/fig_p7_1.png) *AI Analysis:* This visual is a set of bar charts. **Axes:** - X-axis: Regions (APAC, Europe, Japan, US). - Y-axis: Percentage (0% to 100%). **Trends and Key Insights:** 1. **AI Exposure:** - **Enabler/Adopter** is most significant in the US, followed by APAC. - **Adopter** category is prominent across all regions. - **Enabler** category is small, with some presence in Europe and APAC. 2. **AI Materiality:** - **Moderate** importance is consistent across all regions. - **Insignificant** category dominates in APAC, Europe, and Japan. - The US shows a notable **Core to Thesis** population. Overall, the charts highlight regional differences in AI stocks and market cap regarding exposure and materiality, with the US showing a higher significance in both dimensions. Source: FactSet, [REDACTED_ORGANIZATION]"
+    },
+    {
+      "content": "## Why AI's Rate of Change Will Continue to Matter\n\nThis report maps the evolution of companies' exposure to AI, how that evolution is perceived by analysts and how it is priced by the market. The reason we think this exercise is valuable to investors is because of: (1) the accelerating capabilities of foundational AI infrastructure, and (2) the fact that this technology is diffusing faster than any before it and into more industries than any before it (see here, here and here).\n\nOver the past 24 months, the speed of change in underlying model capabilities has ratcheted up from reliable output that can displace or supplement 5 second or 5 minute tasks, to models that are providing reliable output (i.e. minimal hallucination) for 15 minute to 1 hour tasks. The latest models focussing on inference-time reasoning (i.e. greater \"thought\" rather than memory regurgitation) is more compute intensive but progresses us towards the potential for 5 hour and eventually 5 day tasks being automated or streamlined.\n\n**Table/Chart**\n*Caption:* Exhibit 18: Our Conceptual Roadmap for AI Developments\n![fig_p7_2.png](../figures/fig_p7_2.png)\n*AI Analysis:* This is a diagram illustrating a conceptual roadmap for AI developments.\n\n**Axes:**\n- **Horizontal Axis (AI Direction of Travel):** Represents time and task complexity from left to right, spanning from \"10 Second Tasks\" to \"5 Hour Tasks.\"\n\n**Trends and Key Insights:**\n- **Task Complexity:** Increases from simple tasks like translation and finding synonyms (10 seconds) to more complex tasks like brainstorming and synthesis involving multiple sources (5 hours).\n- **AI Capability Progression:** Shows past, present, and potential future capabilities of AI systems:\n  - **GPT-3.5:** Achieved passable reliability for the simplest tasks (10 seconds).\n  - **GPT-4.0:** Current reliable performance for more complex tasks (15 minutes).\n  - **GPT-X:** Future goal, aimed at handling the most complex tasks (5 hours).\n\nThe roadmap indicates a trajectory of AI becoming capable of handling tasks of increasing complexity and duration.",
+      "metadata": {
+        "breadcrumbs": "Why AI's Rate of Change Will Continue to Matter",
+        "char_count": 2078,
+        "num_atomic_chunks": 4,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [],
+          "DATE": [],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "AI development",
+          "task complexity",
+          "AI capability progression",
+          "foundational AI infrastructure",
+          "investor insights"
+        ],
+        "monetary_values": []
+      }
+    },
+    {
+      "content": "Source: Morgan Stanley Research\n\nAfter a year of accelerating global competition in models, the latest major breakthrough was announced by OpenAI in December. The o3 Series supercedes the o1 models released",
+      "metadata": {
+        "breadcrumbs": "Why AI's Rate of Change Will Continue to Matter",
+        "char_count": 204,
+        "num_atomic_chunks": 2,
+        "pii_redacted": true,
+        "entities": {
+          "PERSON": [],
+          "ORGANIZATION": [
+            "Morgan Stanley",
+            "OpenAI"
+          ],
+          "DATE": [
+            "December"
+          ],
+          "GPE": [],
+          "MONEY": []
+        },
+        "key_phrases": [
+          "global competition",
+          "major breakthrough",
+          "o3 Series",
+          "o1 models",
+          "supercedes"
+        ],
+        "monetary_values": []
+      },
+      "content_sanitised": "Source: Morgan Stanley Research\n\nAfter a year of accelerating global competition in models, the latest major breakthrough was announced by [REDACTED_ORGANIZATION] in December. The o3 Series supercedes the o1 models released"
+    }
+  ],
+  "stats": {
+    "chunks_processed": 20,
+    "openai_calls": 20,
+    "openai_errors": 0,
+    "entities_extracted": 98,
+    "pii_replacements": 16
+  }
+}

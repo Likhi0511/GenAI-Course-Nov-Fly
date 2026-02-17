@@ -13,11 +13,11 @@
   },
   {
     "ParameterKey": "OpenAIApiKeySecretArn",
-    "ParameterValue": ""
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-openai-6rzhmk"
   },
   {
     "ParameterKey": "PineconeApiKeySecretArn",
-    "ParameterValue": ""
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-pinecone-jxAGWv"
   },
   {
     "ParameterKey": "RayDockerImageUri",
