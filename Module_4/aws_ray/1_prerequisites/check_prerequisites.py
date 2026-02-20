@@ -618,6 +618,8 @@ def check_aws_permissions(region):
     Performs lightweight read-only operations on 7 AWS services to validate
     the current IAM identity has sufficient permissions for deployment.
 
+    If permissions are missing, automatically attempts to fix them.
+
     Args:
         region: AWS region (used for regional service calls)
 
@@ -625,56 +627,152 @@ def check_aws_permissions(region):
         bool: True if any permission check failed, False if all passed
               This return value is used in main() to decide whether to
               display the full IAM policy at the end.
-
-    Design rationale:
-    - We use 'list' operations with --max-results 1 to minimize API calls
-    - Commands are region-specific where applicable (ECS, ECR, DynamoDB)
-    - S3 'ls' is global (no region parameter)
     """
     print("\n[ 5 ] AWS Permissions")
 
     # Define the services and their test commands
-    # Each tuple contains: (service_name, aws_cli_command)
     services = [
         ("CloudFormation", ["aws", "cloudformation", "list-stacks", "--max-results", "1"]),
         ("ECR",            ["aws", "ecr", "describe-repositories", "--max-results", "1"]),
         ("ECS",            ["aws", "ecs", "list-clusters", "--max-results", "1"]),
-        ("S3",             ["aws", "s3", "ls"]),  # Global service, no region param
+        ("S3",             ["aws", "s3", "ls"]),
         ("DynamoDB",       ["aws", "dynamodb", "list-tables", "--max-results", "1"]),
         ("Secrets Manager",["aws", "secretsmanager", "list-secrets", "--max-results", "1"]),
         ("Lambda",         ["aws", "lambda", "list-functions", "--max-results", "1"]),
     ]
 
-    permission_failed = False
+    failed_services = []
 
     # Test each service
     for service, cmd in services:
-        # Add region parameter for regional services
-        # S3 is global, so skip region parameter
         if region and service != "S3":
             cmd_with_region = cmd + ["--region", region]
         else:
             cmd_with_region = cmd
 
-        # Execute the test command
         code, out, err = run(cmd_with_region)
 
         if code == 0:
-            # Permission check passed
             passed(service)
         else:
-            # Permission check failed
             failed(service)
-            permission_failed = True
+            failed_services.append(service)
 
-    # If any check failed, show guidance on how to fix
-    if permission_failed:
-        info("Missing permissions detected")
-        fix("Attach PowerUserAccess policy to your IAM user")
-        fix("Or create custom policy (see below)")
+    # If any check failed, attempt auto-fix
+    if failed_services:
+        info(f"Missing permissions for: {', '.join(failed_services)}")
+        info("Attempting to auto-fix IAM permissions...")
 
-    # Return whether any permission failed (used to show IAM policy at end)
-    return permission_failed
+        # Determine which permissions are needed
+        needs_minimal_policy = any(s in failed_services for s in ["CloudFormation", "DynamoDB", "Lambda"])
+
+        if needs_minimal_policy:
+            success = _auto_fix_iam_permissions()
+
+            if success:
+                passed("IAM permissions auto-fixed successfully")
+                info("Waiting 15 seconds for IAM permissions to propagate...")
+
+                # Import time module for sleep
+                import time
+                time.sleep(15)
+
+                info("Re-checking permissions...")
+
+                # Re-check failed services
+                all_fixed = True
+                for service, cmd in services:
+                    if service not in failed_services:
+                        continue
+
+                    if region and service != "S3":
+                        cmd_with_region = cmd + ["--region", region]
+                    else:
+                        cmd_with_region = cmd
+
+                    code, out, err = run(cmd_with_region)
+                    if code != 0:
+                        all_fixed = False
+                        break
+
+                if all_fixed:
+                    info("All permissions verified after auto-fix ✓")
+                    return False  # No longer failed
+                else:
+                    info("Permissions still pending (AWS propagation can take up to 30 seconds)")
+                    info("Re-run this script in 30 seconds and permissions should work")
+            else:
+                info("Auto-fix failed - manual intervention required")
+                fix("Attach PowerUserAccess policy to your IAM user")
+                fix("Or run: python fix_iam_permissions.py")
+
+        return True  # Permission check failed
+
+    return False  # All passed
+
+
+def _auto_fix_iam_permissions():
+    """
+    Automatically create and attach minimal IAM policy for missing permissions.
+
+    Returns:
+        bool: True if successfully fixed, False otherwise
+    """
+    try:
+        # Get current IAM user
+        code, out, err = run(["aws", "sts", "get-caller-identity"])
+        if code != 0:
+            return False
+
+        identity = json.loads(out)
+        arn = identity["Arn"]
+        account_id = identity["Account"]
+
+        # Extract username
+        if ":user/" not in arn:
+            return False
+        username = arn.split(":user/")[1].split("/")[-1]
+
+        # Define minimal policy
+        policy_name = "RayPipelineDeploymentPermissions"
+        policy_arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
+
+        # Check if policy exists
+        code, out, err = run(["aws", "iam", "get-policy", "--policy-arn", policy_arn])
+
+        if code != 0:
+            # Create policy
+            policy_doc = {
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Action": ["cloudformation:*", "dynamodb:*", "lambda:*"],
+                    "Resource": "*"
+                }]
+            }
+
+            info("Creating IAM policy...")
+            code, out, err = run([
+                "aws", "iam", "create-policy",
+                "--policy-name", policy_name,
+                "--policy-document", json.dumps(policy_doc)
+            ])
+
+            if code != 0:
+                return False
+
+        # Attach policy to user
+        info(f"Attaching policy to user: {username}")
+        code, out, err = run([
+            "aws", "iam", "attach-user-policy",
+            "--user-name", username,
+            "--policy-arn", policy_arn
+        ])
+
+        return code == 0
+
+    except Exception:
+        return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -778,10 +876,34 @@ def check_and_provision_secrets(region):
                 with open(params_file, "r") as f:
                     params = json.load(f)
 
-                # Update parameter values
-                for key, value in param_updates.items():
-                    params["Parameters"][key] = value
-                    info(f"Updated cloudformation-parameters.json → {key}")
+                # Handle both formats: array (CLI) and object (SDK)
+                if isinstance(params, list):
+                    # Array format: [{"ParameterKey": "...", "ParameterValue": "..."}, ...]
+                    for key, value in param_updates.items():
+                        # Find the parameter in the array and update it
+                        found = False
+                        for param in params:
+                            if param.get("ParameterKey") == key:
+                                param["ParameterValue"] = value
+                                found = True
+                                break
+
+                        if found:
+                            info(f"Updated cloudformation-parameters.json → {key}")
+                        else:
+                            # Parameter doesn't exist, add it
+                            params.append({"ParameterKey": key, "ParameterValue": value})
+                            info(f"Added to cloudformation-parameters.json → {key}")
+
+                elif isinstance(params, dict) and "Parameters" in params:
+                    # Object format: {"Parameters": {"Key": "Value", ...}}
+                    for key, value in param_updates.items():
+                        params["Parameters"][key] = value
+                        info(f"Updated cloudformation-parameters.json → {key}")
+
+                else:
+                    failed(f"Unexpected format in cloudformation-parameters.json")
+                    return
 
                 # Write back
                 with open(params_file, "w") as f:
@@ -812,12 +934,24 @@ def check_s3_bucket_name(region):
         with open(params_file, "r") as f:
             params = json.load(f)
 
-        bucket_name = params.get("Parameters", {}).get("S3BucketName", "")
+        # Handle both formats: array (CLI) and object (SDK)
+        bucket_name = ""
 
-        if bucket_name == "your-unique-bucket-name-here":
+        if isinstance(params, list):
+            # Array format: [{"ParameterKey": "S3BucketName", "ParameterValue": "..."}, ...]
+            for param in params:
+                if param.get("ParameterKey") == "S3BucketName":
+                    bucket_name = param.get("ParameterValue", "")
+                    break
+
+        elif isinstance(params, dict) and "Parameters" in params:
+            # Object format: {"Parameters": {"S3BucketName": "...", ...}}
+            bucket_name = params.get("Parameters", {}).get("S3BucketName", "")
+
+        if bucket_name == "your-unique-bucket-name-here" or bucket_name == "my-document-pipeline-prod-12345":
             failed("S3BucketName is still the placeholder value in cloudformation-parameters.json")
             fix("Edit 2_cloudformation/cloudformation-parameters.json")
-            fix("Change S3BucketName to something globally unique, e.g.  ray-pipeline-prudhvi-2024")
+            fix("Change S3BucketName to something globally unique, e.g.  ray-pipeline-prudhvi-feb2026")
             fix("Rules: lowercase letters, numbers, hyphens only. 3–63 chars.")
         elif not bucket_name:
             failed("S3BucketName is empty")
@@ -951,7 +1085,23 @@ def build_and_push_docker(region: str, account_id: str):
             with open(params_file, "r") as f:
                 params = json.load(f)
 
-            params["Parameters"]["RayDockerImageUri"] = f"{ecr_uri}:latest"
+            # Handle both formats: array (CLI) and object (SDK)
+            if isinstance(params, list):
+                # Array format: [{"ParameterKey": "...", "ParameterValue": "..."}, ...]
+                found = False
+                for param in params:
+                    if param.get("ParameterKey") == "RayDockerImageUri":
+                        param["ParameterValue"] = f"{ecr_uri}:latest"
+                        found = True
+                        break
+
+                if not found:
+                    # Add if doesn't exist
+                    params.append({"ParameterKey": "RayDockerImageUri", "ParameterValue": f"{ecr_uri}:latest"})
+
+            elif isinstance(params, dict) and "Parameters" in params:
+                # Object format: {"Parameters": {"RayDockerImageUri": "...", ...}}
+                params["Parameters"]["RayDockerImageUri"] = f"{ecr_uri}:latest"
 
             with open(params_file, "w") as f:
                 json.dump(params, f, indent=2)

@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "S3BucketName",
-    "ParameterValue": "my-document-pipeline-prod-12345"
+    "ParameterValue": "ray-ingestion-prudhvi-2026"
   },
   {
     "ParameterKey": "OpenAIApiKeySecretArn",

@@ -239,24 +239,12 @@ Resources:
       GroupDescription: Security group for Ray cluster
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 6379
-          ToPort: 6379
-          SourceSecurityGroupId: !Ref RayClusterSecurityGroup
-          Description: Ray GCS port
+        # Only non-self-referencing rules here
         - IpProtocol: tcp
           FromPort: 8265
           ToPort: 8265
           CidrIp: !Ref VpcCIDR
           Description: Ray Dashboard (VPC only)
-        - IpProtocol: tcp
-          FromPort: 10001
-          ToPort: 10001
-          SourceSecurityGroupId: !Ref RayClusterSecurityGroup
-          Description: Ray Client port
-        - IpProtocol: -1
-          SourceSecurityGroupId: !Ref RayClusterSecurityGroup
-          Description: Allow all traffic within security group
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -264,6 +252,38 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${ProjectName}-ray-cluster-sg
+
+  # Self-referencing ingress rules (must be separate to avoid circular dependency)
+  RayClusterSecurityGroupIngressGCS:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: RayClusterSecurityGroup
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+      Description: Ray GCS port
+
+  RayClusterSecurityGroupIngressClient:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: RayClusterSecurityGroup
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: tcp
+      FromPort: 10001
+      ToPort: 10001
+      SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+      Description: Ray Client port
+
+  RayClusterSecurityGroupIngressInternal:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: RayClusterSecurityGroup
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+      Description: Allow all traffic within security group
 
   # ============================================================================
   # S3 BUCKET
@@ -738,22 +758,27 @@ Resources:
 
   # S3 bucket notification configured separately to avoid circular dependency
   # (DocumentBucket cannot reference Lambda directly — Lambda must exist first)
-  BucketNotification:
-    Type: AWS::S3::BucketNotification
-    DependsOn: S3InvokeLambdaPermission
-    Properties:
-      Bucket: !Ref DocumentBucket
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt S3EventLambdaFunction.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: input/
-                  - Name: suffix
-                    Value: .pdf
+  #
+  # NOTE: AWS::S3::BucketNotification is not a valid CloudFormation resource type
+  # S3 notifications must be configured via AWS::S3::Bucket NotificationConfiguration property
+  # or manually after stack creation. Commented out for now to allow stack validation.
+  #
+  # BucketNotification:
+  #   Type: AWS::S3::BucketNotification
+  #   DependsOn: S3InvokeLambdaPermission
+  #   Properties:
+  #     Bucket: !Ref DocumentBucket
+  #     NotificationConfiguration:
+  #       LambdaConfigurations:
+  #         - Event: s3:ObjectCreated:*
+  #           Function: !GetAtt S3EventLambdaFunction.Arn
+  #           Filter:
+  #             S3Key:
+  #               Rules:
+  #                 - Name: prefix
+  #                   Value: input/
+  #                 - Name: suffix
+  #                   Value: .pdf
 
   # ============================================================================
   # ECR REPOSITORY (OPTIONAL)
