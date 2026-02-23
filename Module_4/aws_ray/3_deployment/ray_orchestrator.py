@@ -752,8 +752,10 @@ def main():
     logger.info("=" * 70)
 
     try:
+        # Logic to handle empty or missing RAY_ADDRESS
+        ray_addr = config.RAY_ADDRESS if config.RAY_ADDRESS and config.RAY_ADDRESS.strip() else None
         ray.init(
-            address=config.RAY_ADDRESS,      # e.g. "ray://ray-head.internal:10001"
+            address=ray_addr,      # e.g. "ray://ray-head.internal:10001"
             namespace=config.RAY_NAMESPACE,  # Isolates this app's tasks from other Ray apps
             logging_level=config.LOG_LEVEL,  # Propagate log level to Ray internals
         )

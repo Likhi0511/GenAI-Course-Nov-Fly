@@ -940,7 +940,7 @@ Resources:
             # "auto" tells Ray to JOIN an existing cluster — wrong on the head node.
             # Workers use "ray-head.local:6379" to connect to this head.
             - Name: RAY_ADDRESS
-              Value: ""
+              Value: "auto"
             - Name: RAY_NAMESPACE
               Value: document-pipeline
             - Name: AWS_REGION
@@ -990,6 +990,8 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: ray-worker
+          LinuxParameters:
+            SharedMemorySize: 2048 # Allocated in MiB
           Image: !Ref ECRImageUri
           Essential: true
           Command:
