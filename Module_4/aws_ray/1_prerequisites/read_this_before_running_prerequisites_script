@@ -1,0 +1,16 @@
+# 1. Confirm AWS CLI is configured
+aws sts get-caller-identity
+# Should show your Account ID: <you aws account id>
+
+# 2. Set your API keys in the terminal
+export OPENAI_API_KEY="sk-..."
+export PINECONE_API_KEY="pcsk_..."
+
+# 3. Confirm Docker Desktop is running
+docker ps
+# Should show empty table, NOT "Cannot connect to Docker daemon"
+
+# 4. Make sure you're in the right directory
+# check_prerequisites.py should be alongside the 2_cloudformation/ and 3_deployment/ folders
+ls
+# Should see: check_prerequisites.py  2_cloudformation/  3_deployment/

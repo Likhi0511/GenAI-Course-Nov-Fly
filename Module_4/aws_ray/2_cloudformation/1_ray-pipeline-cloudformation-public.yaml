@@ -1,0 +1,1203 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Production-Ready Ray Document Processing Pipeline - COMPLETE FINAL VERSION with Lambda, VPC Endpoints, SNS Alerts'
+
+# ============================================================================
+# PARAMETERS
+# ============================================================================
+
+Parameters:
+  # Network Configuration
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+
+  PublicSubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the public subnet
+
+  # S3 Configuration
+  S3BucketName:
+    Type: String
+    Default: ray-document-pipeline
+    Description: S3 bucket name (will append account ID for uniqueness)
+
+  # Ray Cluster Configuration
+  RayHeadCPU:
+    Type: Number
+    Default: 2048
+    Description: CPU units for Ray Head (2048 = 2 vCPU)
+    AllowedValues: [1024, 2048, 4096]
+
+  RayHeadMemory:
+    Type: Number
+    Default: 4096
+    Description: Memory for Ray Head in MB
+    AllowedValues: [2048, 4096, 8192]
+
+  RayWorkerCPU:
+    Type: Number
+    Default: 2048
+    Description: CPU units for each Ray Worker (2048 = 2 vCPU)
+    AllowedValues: [1024, 2048, 4096]
+
+  RayWorkerMemory:
+    Type: Number
+    Default: 4096
+    Description: Memory for each Ray Worker in MB
+    AllowedValues: [2048, 4096, 8192, 16384]
+
+  # Auto-Scaling Configuration
+  MinWorkers:
+    Type: Number
+    Default: 1
+    Description: Minimum number of Ray workers
+    MinValue: 0
+    MaxValue: 10
+
+  MaxWorkers:
+    Type: Number
+    Default: 10
+    Description: Maximum number of Ray workers
+    MinValue: 1
+    MaxValue: 50
+
+  TargetCPUUtilization:
+    Type: Number
+    Default: 70
+    Description: Target CPU utilization for auto-scaling
+
+  # Container Image
+  ECRImageUri:
+    Type: String
+    Description: ECR image URI (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/ray-pipeline:latest)
+
+  # Secrets
+  OpenAISecretArn:
+    Type: String
+    Description: ARN of OpenAI API key in Secrets Manager
+
+  PineconeSecretArn:
+    Type: String
+    Description: ARN of Pinecone API key in Secrets Manager
+
+  # Alerts
+  AlertEmail:
+    Type: String
+    Description: Email address for CloudWatch alarms
+    Default: ""
+
+  # Environment
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+
+  # Cost Optimization
+  UseFargateSpot:
+    Type: String
+    Default: "true"
+    Description: Use Fargate Spot for workers (70% cost savings)
+    AllowedValues: ["true", "false"]
+
+# ============================================================================
+# CONDITIONS
+# ============================================================================
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  UseFargateSpot: !Equals [!Ref UseFargateSpot, "true"]
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
+
+Resources:
+
+  # ==========================================================================
+  # NETWORKING
+  # ==========================================================================
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: DocumentPipeline
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-subnet'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # VPC Endpoints for cost optimization
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds:
+        - !Ref PublicRouteTable
+      VpcEndpointType: Gateway
+
+  DynamoDBVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      RouteTableIds:
+        - !Ref PublicRouteTable
+      VpcEndpointType: Gateway
+
+  # ==========================================================================
+  # SECURITY GROUPS
+  # ==========================================================================
+
+  RayClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-ray-cluster-sg'
+      GroupDescription: Security group for Ray cluster
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ray-cluster-sg'
+
+  RayGCSIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: tcp
+      FromPort: 6379
+      ToPort: 6379
+      SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+
+  RayDashboardIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8265
+      ToPort: 8265
+      CidrIp: 0.0.0.0/0
+
+  RayObjectManagerIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: tcp
+      FromPort: 10001
+      ToPort: 10001
+      SourceSecurityGroupId: !Ref RayClusterSecurityGroup
+
+  RayClusterEgressRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref RayClusterSecurityGroup
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  # ==========================================================================
+  # S3 BUCKET
+  # ==========================================================================
+
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${S3BucketName}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteExtractedAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: extracted/
+          - Id: DeleteChunksAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: chunks/
+          - Id: DeleteEnrichedAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: enriched/
+          - Id: DeleteEmbeddingsAfter90Days
+            Status: Enabled
+            ExpirationInDays: 90
+            Prefix: embeddings/
+          - Id: DeleteInputAfter180Days
+            Status: Enabled
+            ExpirationInDays: 180
+            Prefix: input/
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # NOTE: S3 event notification is wired in BucketNotification resource below.
+      # It cannot live here because CloudFormation cannot resolve the circular
+      # dependency: DocumentBucket → S3EventLambda.Arn → S3TriggerLambdaPermission
+      # → DocumentBucket.Arn. Separating into AWS::S3::BucketNotification breaks
+      # the cycle: Lambda is created first, permission is granted, then notification
+      # is attached — all without touching the bucket resource itself.
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-documents'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DocumentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowECSTaskAccess
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt ECSTaskRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub '${DocumentBucket.Arn}/*'
+              - !GetAtt DocumentBucket.Arn
+
+  # ==========================================================================
+  # DYNAMODB TABLES
+  # ==========================================================================
+
+  ControlTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-control'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: processing_version
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+        - AttributeName: processing_version
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: status-updated-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-control'
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-audit'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-audit'
+
+  MetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-metrics'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: metric_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: date
+          KeyType: HASH
+        - AttributeName: metric_type
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-metrics'
+
+  # ==========================================================================
+  # SNS TOPIC FOR ALERTS
+  # ==========================================================================
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-alerts'
+      DisplayName: Ray Pipeline Alerts
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alerts'
+
+  # ==========================================================================
+  # LAMBDA FUNCTION - S3 EVENT HANDLER
+  # ==========================================================================
+
+  S3EventLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-s3-handler'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt ControlTable.Arn
+                  - !GetAtt AuditTable.Arn
+                  - !GetAtt MetricsTable.Arn
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub '${DocumentBucket.Arn}/*'
+
+  S3EventLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-s3-event-handler'
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt S3EventLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          CONTROL_TABLE_NAME: !Ref ControlTable
+          AUDIT_TABLE_NAME: !Ref AuditTable
+          METRICS_TABLE_NAME: !Ref MetricsTable
+          PROCESSING_VERSION: 'v1'
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import hashlib
+          import os
+          from botocore.exceptions import ClientError
+          from datetime import datetime, timedelta
+          from urllib.parse import unquote_plus
+          
+          dynamodb = boto3.resource('dynamodb')
+          control_table = dynamodb.Table(os.environ['CONTROL_TABLE_NAME'])
+          audit_table = dynamodb.Table(os.environ['AUDIT_TABLE_NAME'])
+          
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+              
+              for record in event['Records']:
+                  if record['eventSource'] != 'aws:s3':
+                      continue
+                  
+                  bucket = record['s3']['bucket']['name']
+                  key = unquote_plus(record['s3']['object']['key'])
+                  
+                  if not key.startswith('input/'):
+                      print(f"Skipping {key} - not in input/ folder")
+                      continue
+                  
+                  if not key.lower().endswith('.pdf'):
+                      print(f"Skipping {key} - not a PDF file")
+                      continue
+                  
+                  # FIX 3: Deterministic document_id derived from S3 key.
+                  # Previously used timestamp → two records for the same PDF if
+                  # S3 fires the event twice (S3 guarantees at-least-once delivery).
+                  # MD5 of the S3 key is stable: same upload = same doc_id always.
+                  key_hash = hashlib.md5(key.encode()).hexdigest()[:8]
+                  filename = key.split('/')[-1].replace('.pdf', '')
+                  doc_id = f"doc_{filename}_{key_hash}"
+                  
+                  print(f"Creating record for document: {doc_id}")
+                  
+                  timestamp = datetime.utcnow()
+                  ttl = int((timestamp + timedelta(days=90)).timestamp())
+                  
+                  try:
+                      # ConditionExpression ensures this is idempotent:
+                      # - First upload  → document_id doesn't exist → insert succeeds
+                      # - S3 retry/dupe → document_id already exists → condition fails
+                      #   → ConditionalCheckFailedException is caught and skipped
+                      # This prevents the same PDF from being queued twice.
+                      control_table.put_item(
+                          Item={
+                              'document_id': doc_id,
+                              'processing_version': os.environ['PROCESSING_VERSION'],
+                              'status': 'PENDING',
+                              'created_at': timestamp.isoformat() + 'Z',
+                              'updated_at': timestamp.isoformat() + 'Z',
+                              's3_bucket': bucket,
+                              's3_key': key,
+                              'current_stage': 'QUEUED',
+                              'retry_count': 0,
+                              'ttl': ttl
+                          },
+                          ConditionExpression='attribute_not_exists(document_id)'
+                      )
+                      print(f"✓ Control record created for {doc_id}")
+                  except ClientError as e:
+                      if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                          # Document already queued — safe to skip, not an error
+                          print(f"⚠ Document {doc_id} already exists in control table — skipping duplicate")
+                          continue
+                      print(f"✗ Failed to create control record: {e}")
+                      raise
+                  except Exception as e:
+                      print(f"✗ Failed to create control record: {e}")
+                      raise
+                  
+                  try:
+                      audit_table.put_item(
+                          Item={
+                              'document_id': doc_id,
+                              'timestamp': timestamp.isoformat() + 'Z',
+                              'event_type': 'DOCUMENT_RECEIVED',
+                              'status': 'PENDING',
+                              'message': f'Document uploaded to s3://{bucket}/{key}',
+                              'metadata': {
+                                  'bucket': bucket,
+                                  'key': key,
+                                  'event_source': record['eventName']
+                              },
+                              'ttl': int((timestamp + timedelta(days=180)).timestamp())
+                          }
+                      )
+                      print(f"✓ Audit record created for {doc_id}")
+                  except Exception as e:
+                      print(f"✗ Failed to create audit record: {e}")
+                  
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(f'Processed {len(event["Records"])} records')
+              }
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-s3-handler'
+
+  S3EventLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${S3EventLambda}'
+      RetentionInDays: 7
+
+  S3TriggerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref S3EventLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentBucket.Arn
+      SourceAccount: !Ref AWS::AccountId
+
+  # FIX 1: Circular dependency resolution.
+  # S3 event notifications live here instead of inside DocumentBucket.Properties.
+  # Execution order guaranteed by DependsOn:
+  #   1. DocumentBucket is created (no notification yet)
+  #   2. S3EventLambda is created
+  #   3. S3TriggerLambdaPermission grants s3.amazonaws.com invoke rights
+  #   4. THIS resource attaches the notification — safe because the Lambda
+  #      permission already exists at this point.
+  DocumentBucketNotification:
+    Type: AWS::S3::BucketNotification
+    DependsOn: S3TriggerLambdaPermission   # Ensure permission exists before attaching trigger
+    Properties:
+      Bucket: !Ref DocumentBucket
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt S3EventLambda.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: input/
+                  - Name: suffix
+                    Value: .pdf
+
+  # ==========================================================================
+  # IAM ROLES
+  # ==========================================================================
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref OpenAISecretArn
+                  - !Ref PineconeSecretArn
+
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${DocumentBucket.Arn}/*'
+                  - !GetAtt DocumentBucket.Arn
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  # FIX 5: DescribeTable is required by test_connections() which calls
+                  # table.table_status to verify the table exists before starting the
+                  # polling loop. Without this the orchestrator exits on startup with
+                  # AccessDeniedException.
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !GetAtt ControlTable.Arn
+                  - !Sub '${ControlTable.Arn}/index/*'
+                  - !GetAtt AuditTable.Arn
+                  - !GetAtt MetricsTable.Arn
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref OpenAISecretArn
+                  - !Ref PineconeSecretArn
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${AWS::StackName}*'
+
+  # ==========================================================================
+  # CLOUDWATCH LOG GROUPS
+  # ==========================================================================
+
+  RayHeadLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/ray-head'
+      RetentionInDays: 7
+
+  RayWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${AWS::StackName}/ray-worker'
+      RetentionInDays: 7
+
+  # ==========================================================================
+  # ECS CLUSTER
+  # ==========================================================================
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${AWS::StackName}-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-cluster'
+
+  # Enable Fargate capacity providers
+  ECSClusterCapacityProviders:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Properties:
+      Cluster: !Ref ECSCluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  # ==========================================================================
+  # ECS TASK DEFINITIONS
+  # ==========================================================================
+
+  RayHeadTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-ray-head'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref RayHeadCPU
+      Memory: !Ref RayHeadMemory
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: ray-head
+          Image: !Ref ECRImageUri
+          Essential: true
+          Command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=========================================="
+              echo "RAY HEAD NODE STARTUP"
+              echo "=========================================="
+              
+              ray start --head \
+                --port=6379 \
+                --dashboard-host=0.0.0.0 \
+                --dashboard-port=8265 \
+                --num-cpus=0 \
+                --include-dashboard=true \
+                --disable-usage-stats &
+              
+              RAY_PID=$!
+              
+              echo "Waiting for Ray to initialize..."
+              until ray status 2>/dev/null; do
+                sleep 2
+              done
+              
+              echo "=========================================="
+              echo "RAY HEAD READY"
+              echo "=========================================="
+              ray status
+              sleep 5
+              
+              echo "=========================================="
+              echo "STARTING RAY ORCHESTRATOR"
+              echo "=========================================="
+              cd /app
+              python ray_orchestrator.py
+              
+              ray stop
+              wait $RAY_PID
+          PortMappings:
+            - ContainerPort: 6379
+            - ContainerPort: 8265
+            - ContainerPort: 10001
+          Environment:
+            # FIX 2: Head node starts its OWN cluster, so address must be empty.
+            # "auto" tells Ray to JOIN an existing cluster — wrong on the head node.
+            # Workers use "ray-head.local:6379" to connect to this head.
+            - Name: RAY_ADDRESS
+              Value: ""
+            - Name: RAY_NAMESPACE
+              Value: document-pipeline
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: S3_BUCKET
+              Value: !Ref DocumentBucket
+            - Name: DYNAMODB_CONTROL_TABLE
+              Value: !Ref ControlTable
+            - Name: DYNAMODB_AUDIT_TABLE
+              Value: !Ref AuditTable
+            - Name: DYNAMODB_METRICS_TABLE
+              Value: !Ref MetricsTable
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: PYTHONUNBUFFERED
+              Value: "1"
+          Secrets:
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Ref OpenAISecretArn
+            - Name: PINECONE_API_KEY
+              ValueFrom: !Ref PineconeSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RayHeadLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ray-head
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - ray status || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+
+  RayWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${AWS::StackName}-ray-worker'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref RayWorkerCPU
+      Memory: !Ref RayWorkerMemory
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: ray-worker
+          Image: !Ref ECRImageUri
+          Essential: true
+          Command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=========================================="
+              echo "RAY WORKER NODE STARTUP"
+              echo "=========================================="
+              
+              echo "Waiting for Ray head at ray-head.local:6379..."
+              until ray health-check --address=ray-head.local:6379 2>/dev/null; do
+                sleep 5
+              done
+              
+              echo "=========================================="
+              echo "STARTING RAY WORKER"
+              echo "=========================================="
+              ray start \
+                --address=ray-head.local:6379 \
+                --disable-usage-stats \
+                --block
+          Environment:
+            - Name: RAY_ADDRESS
+              Value: ray-head.local:6379
+            - Name: RAY_NAMESPACE
+              Value: document-pipeline
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: S3_BUCKET
+              Value: !Ref DocumentBucket
+            - Name: DYNAMODB_CONTROL_TABLE
+              Value: !Ref ControlTable
+            - Name: DYNAMODB_AUDIT_TABLE
+              Value: !Ref AuditTable
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: PYTHONUNBUFFERED
+              Value: "1"
+          Secrets:
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Ref OpenAISecretArn
+            - Name: PINECONE_API_KEY
+              ValueFrom: !Ref PineconeSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RayWorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ray-worker
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - ray status || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
+
+  # ==========================================================================
+  # SERVICE DISCOVERY
+  # ==========================================================================
+
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: local
+      Vpc: !Ref VPC
+
+  RayHeadServiceDiscovery:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: ray-head
+      DnsConfig:
+        DnsRecords:
+          - Type: A
+            TTL: 10
+        NamespaceId: !Ref ServiceDiscoveryNamespace
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  # ==========================================================================
+  # ECS SERVICES
+  # ==========================================================================
+
+  RayHeadService:
+    Type: AWS::ECS::Service
+    DependsOn: PublicRoute
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-ray-head'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref RayHeadTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PublicSubnet
+          SecurityGroups:
+            - !Ref RayClusterSecurityGroup
+          AssignPublicIp: ENABLED
+      ServiceRegistries:
+        - RegistryArn: !GetAtt RayHeadServiceDiscovery.Arn
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+
+  RayWorkerService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - RayHeadService
+      - PublicRoute
+    Properties:
+      ServiceName: !Sub '${AWS::StackName}-ray-worker'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref RayWorkerTaskDefinition
+      DesiredCount: !Ref MinWorkers
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PublicSubnet
+          SecurityGroups:
+            - !Ref RayClusterSecurityGroup
+          AssignPublicIp: ENABLED
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+      CapacityProviderStrategy: !If
+        - UseFargateSpot
+        - - CapacityProvider: FARGATE_SPOT
+            Weight: 4
+            Base: 0
+          - CapacityProvider: FARGATE
+            Weight: 1
+            Base: 1
+        - - CapacityProvider: FARGATE
+            Weight: 1
+            Base: !Ref MinWorkers
+
+  # ==========================================================================
+  # AUTO-SCALING
+  # ==========================================================================
+
+  WorkerScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      ServiceNamespace: ecs
+      ResourceId: !Sub 'service/${ECSCluster}/${RayWorkerService.Name}'
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: !Ref MinWorkers
+      MaxCapacity: !Ref MaxWorkers
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+
+  WorkerCPUScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-worker-cpu-scaling'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WorkerScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref TargetCPUUtilization
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  WorkerMemoryScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-worker-memory-scaling'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref WorkerScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageMemoryUtilization
+        TargetValue: 80
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  # ==========================================================================
+  # CLOUDWATCH ALARMS
+  # ==========================================================================
+
+  RayHeadDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-ray-head-down'
+      AlarmDescription: Ray head service has no running tasks
+      MetricName: RunningTaskCount
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt RayHeadService.Name
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      TreatMissingData: breaching
+      AlarmActions: !If
+        - HasAlertEmail
+        - [!Ref AlertTopic]
+        - !Ref AWS::NoValue
+
+  NoWorkersAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-no-workers'
+      AlarmDescription: No Ray workers are running
+      MetricName: RunningTaskCount
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      # FIX 7: Changed EvaluationPeriods from 1 to 3 and TreatMissingData from
+      # "breaching" to "notBreaching". Previously the alarm fired the moment the
+      # stack deployed because no metric data exists yet — CloudWatch treated
+      # missing data as a breach and immediately sent an alert email.
+      # With notBreaching + 3 periods (15 min), workers have time to start before
+      # the alarm can possibly trigger.
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt RayWorkerService.Name
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertEmail
+        - [!Ref AlertTopic]
+        - !Ref AWS::NoValue
+
+  WorkersAtMaxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-workers-at-max'
+      AlarmDescription: Ray workers at maximum capacity
+      MetricName: RunningTaskCount
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref MaxWorkers
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt RayWorkerService.Name
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      AlarmActions: !If
+        - HasAlertEmail
+        - [!Ref AlertTopic]
+        - !Ref AWS::NoValue
+
+# ============================================================================
+# OUTPUTS
+# ============================================================================
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-vpc-id'
+
+  S3BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref DocumentBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-s3-bucket'
+
+  ControlTableName:
+    Description: DynamoDB Control Table
+    Value: !Ref ControlTable
+
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+
+  RayHeadServiceName:
+    Description: Ray Head Service Name
+    Value: !GetAtt RayHeadService.Name
+
+  RayWorkerServiceName:
+    Description: Ray Worker Service Name
+    Value: !GetAtt RayWorkerService.Name
+
+  S3EventLambdaArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt S3EventLambda.Arn
+
+  AlertTopicArn:
+    Description: SNS Topic ARN for Alerts
+    Value: !If [HasAlertEmail, !Ref AlertTopic, 'Not configured']
+
+  QuickStart:
+    Description: Quick start commands
+    Value: !Sub |
+      # 1. Find Ray Dashboard URL
+      aws ecs describe-tasks --cluster ${ECSCluster} --tasks $(aws ecs list-tasks --cluster ${ECSCluster} --service-name ${RayHeadService.Name} --query 'taskArns[0]' --output text) --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text | xargs -I {} aws ec2 describe-network-interfaces --network-interface-ids {} --query 'NetworkInterfaces[0].Association.PublicIp' --output text
+      
+      # 2. Upload test PDF
+      aws s3 cp test.pdf s3://${DocumentBucket}/input/
+      
+      # 3. Monitor logs
+      aws logs tail /ecs/${AWS::StackName}/ray-head --follow
+
+  CostEstimate:
+    Description: Estimated monthly cost
+    Value: !Sub |
+      Ray Head: $${RayHeadCPU} CPU = ~$30/month
+      Workers: ${MinWorkers}-${MaxWorkers} x $${RayWorkerCPU} CPU = ~$30-$${MaxWorkers}00/month
+      With Fargate Spot: 70% savings on workers
+      Total estimate: $40-$150/month

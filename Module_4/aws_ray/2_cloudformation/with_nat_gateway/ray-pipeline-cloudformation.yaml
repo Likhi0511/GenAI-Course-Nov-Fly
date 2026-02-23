@@ -239,7 +239,6 @@ Resources:
       GroupDescription: Security group for Ray cluster
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        # Only non-self-referencing rules here
         - IpProtocol: tcp
           FromPort: 8265
           ToPort: 8265
@@ -253,7 +252,6 @@ Resources:
         - Key: Name
           Value: !Sub ${ProjectName}-ray-cluster-sg
 
-  # Self-referencing ingress rules (must be separate to avoid circular dependency)
   RayClusterSecurityGroupIngressGCS:
     Type: AWS::EC2::SecurityGroupIngress
     DependsOn: RayClusterSecurityGroup
@@ -319,39 +317,6 @@ Resources:
               - TransitionInDays: 30
                 StorageClass: GLACIER
             ExpirationInDays: 90
-          - Id: ChunksLifecycle
-            Status: Enabled
-            Prefix: chunks/
-            Transitions:
-              - TransitionInDays: 7
-                StorageClass: INTELLIGENT_TIERING
-              - TransitionInDays: 30
-                StorageClass: GLACIER
-            ExpirationInDays: 90
-          - Id: EnrichedLifecycle
-            Status: Enabled
-            Prefix: enriched/
-            Transitions:
-              - TransitionInDays: 7
-                StorageClass: INTELLIGENT_TIERING
-              - TransitionInDays: 30
-                StorageClass: GLACIER
-            ExpirationInDays: 90
-          - Id: EmbeddingsLifecycle
-            Status: Enabled
-            Prefix: embeddings/
-            Transitions:
-              - TransitionInDays: 7
-                StorageClass: INTELLIGENT_TIERING
-          - Id: ErrorsLifecycle
-            Status: Enabled
-            Prefix: errors/
-            Transitions:
-              - TransitionInDays: 1
-                StorageClass: INTELLIGENT_TIERING
-              - TransitionInDays: 7
-                StorageClass: GLACIER
-            ExpirationInDays: 180
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -380,6 +345,10 @@ Resources:
         - AttributeName: status
           AttributeType: S
         - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: current_stage
+          AttributeType: S
+        - AttributeName: updated_at
           AttributeType: S
       KeySchema:
         - AttributeName: document_id
@@ -462,36 +431,6 @@ Resources:
           Value: !Ref EnvironmentName
 
   # ============================================================================
-  # SECRETS MANAGER (OPTIONAL)
-  # ============================================================================
-
-  OpenAIApiKeySecret:
-    Type: AWS::SecretsManager::Secret
-    Condition: CreateSecrets
-    Properties:
-      Name: !Sub ${ProjectName}-openai-api-key
-      Description: OpenAI API key for document pipeline
-      SecretString: '{"OPENAI_API_KEY":"PLACEHOLDER_REPLACE_AFTER_CREATION"}'
-      Tags:
-        - Key: Name
-          Value: !Sub ${ProjectName}-openai-secret
-        - Key: Environment
-          Value: !Ref EnvironmentName
-
-  PineconeApiKeySecret:
-    Type: AWS::SecretsManager::Secret
-    Condition: CreateSecrets
-    Properties:
-      Name: !Sub ${ProjectName}-pinecone-api-key
-      Description: Pinecone API key for document pipeline
-      SecretString: '{"PINECONE_API_KEY":"PLACEHOLDER_REPLACE_AFTER_CREATION"}'
-      Tags:
-        - Key: Name
-          Value: !Sub ${ProjectName}-pinecone-secret
-        - Key: Environment
-          Value: !Ref EnvironmentName
-
-  # ============================================================================
   # IAM ROLES
   # ============================================================================
 
@@ -557,14 +496,8 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource:
-                  - !If
-                    - CreateSecrets
-                    - !Ref OpenAIApiKeySecret
-                    - !Ref OpenAIApiKeySecretArn
-                  - !If
-                    - CreateSecrets
-                    - !Ref PineconeApiKeySecret
-                    - !Ref PineconeApiKeySecretArn
+                  - !Ref OpenAIApiKeySecretArn
+                  - !Ref PineconeApiKeySecretArn
       Tags:
         - Key: Name
           Value: !Sub ${ProjectName}-ecs-execution-role
@@ -618,14 +551,8 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                 Resource:
-                  - !If
-                    - CreateSecrets
-                    - !Ref OpenAIApiKeySecret
-                    - !Ref OpenAIApiKeySecretArn
-                  - !If
-                    - CreateSecrets
-                    - !Ref PineconeApiKeySecret
-                    - !Ref PineconeApiKeySecretArn
+                  - !Ref OpenAIApiKeySecretArn
+                  - !Ref PineconeApiKeySecretArn
         - PolicyName: CloudWatchMetrics
           PolicyDocument:
             Version: '2012-10-17'
@@ -756,65 +683,6 @@ Resources:
       SourceArn: !GetAtt DocumentBucket.Arn
       SourceAccount: !Ref AWS::AccountId
 
-  # S3 bucket notification configured separately to avoid circular dependency
-  # (DocumentBucket cannot reference Lambda directly — Lambda must exist first)
-  #
-  # NOTE: AWS::S3::BucketNotification is not a valid CloudFormation resource type
-  # S3 notifications must be configured via AWS::S3::Bucket NotificationConfiguration property
-  # or manually after stack creation. Commented out for now to allow stack validation.
-  #
-  # BucketNotification:
-  #   Type: AWS::S3::BucketNotification
-  #   DependsOn: S3InvokeLambdaPermission
-  #   Properties:
-  #     Bucket: !Ref DocumentBucket
-  #     NotificationConfiguration:
-  #       LambdaConfigurations:
-  #         - Event: s3:ObjectCreated:*
-  #           Function: !GetAtt S3EventLambdaFunction.Arn
-  #           Filter:
-  #             S3Key:
-  #               Rules:
-  #                 - Name: prefix
-  #                   Value: input/
-  #                 - Name: suffix
-  #                   Value: .pdf
-
-  # ============================================================================
-  # ECR REPOSITORY (OPTIONAL)
-  # ============================================================================
-
-  ECRRepository:
-    Type: AWS::ECR::Repository
-    Condition: CreateECRRepository
-    Properties:
-      RepositoryName: !Sub ${ProjectName}-ray
-      ImageScanningConfiguration:
-        ScanOnPush: true
-      EncryptionConfiguration:
-        EncryptionType: AES256
-      LifecyclePolicy:
-        LifecyclePolicyText: |
-          {
-            "rules": [
-              {
-                "rulePriority": 1,
-                "description": "Keep last 10 images",
-                "selection": {
-                  "tagStatus": "any",
-                  "countType": "imageCountMoreThan",
-                  "countNumber": 10
-                },
-                "action": {
-                  "type": "expire"
-                }
-              }
-            ]
-          }
-      Tags:
-        - Key: Name
-          Value: !Sub ${ProjectName}-ray-ecr
-
   # ============================================================================
   # ECS CLUSTER
   # ============================================================================
@@ -869,10 +737,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: ray-head
-          Image: !If
-            - CreateECRRepository
-            - !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:latest
-            - !Ref RayDockerImageUri
+          Image: !Ref RayDockerImageUri
           Essential: true
           PortMappings:
             - ContainerPort: 6379
@@ -896,9 +761,9 @@ Resources:
               Value: auto
           Secrets:
             - Name: OPENAI_API_KEY
-              ValueFrom: !If [CreateSecrets, !Sub '${OpenAIApiKeySecret}:OPENAI_API_KEY::', !Sub '${OpenAIApiKeySecretArn}:OPENAI_API_KEY::']
+              ValueFrom: !Sub '${OpenAIApiKeySecretArn}:OPENAI_API_KEY::'
             - Name: PINECONE_API_KEY
-              ValueFrom: !If [CreateSecrets, !Sub '${PineconeApiKeySecret}:PINECONE_API_KEY::', !Sub '${PineconeApiKeySecretArn}:PINECONE_API_KEY::']
+              ValueFrom: !Sub '${PineconeApiKeySecretArn}:PINECONE_API_KEY::'
           Command:
             - ray
             - start
@@ -927,10 +792,7 @@ Resources:
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       ContainerDefinitions:
         - Name: ray-worker
-          Image: !If
-            - CreateECRRepository
-            - !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}:latest
-            - !Ref RayDockerImageUri
+          Image: !Ref RayDockerImageUri
           Essential: true
           Environment:
             - Name: AWS_REGION
@@ -945,9 +807,9 @@ Resources:
               Value: !Ref MetricsTable
           Secrets:
             - Name: OPENAI_API_KEY
-              ValueFrom: !If [CreateSecrets, !Sub '${OpenAIApiKeySecret}:OPENAI_API_KEY::', !Sub '${OpenAIApiKeySecretArn}:OPENAI_API_KEY::']
+              ValueFrom: !Sub '${OpenAIApiKeySecretArn}:OPENAI_API_KEY::'
             - Name: PINECONE_API_KEY
-              ValueFrom: !If [CreateSecrets, !Sub '${PineconeApiKeySecret}:PINECONE_API_KEY::', !Sub '${PineconeApiKeySecretArn}:PINECONE_API_KEY::']
+              ValueFrom: !Sub '${PineconeApiKeySecretArn}:PINECONE_API_KEY::'
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -1043,13 +905,6 @@ Outputs:
     Value: !Ref MetricsTable
     Export:
       Name: !Sub ${AWS::StackName}-MetricsTable
-
-  ECRRepositoryUri:
-    Condition: CreateECRRepository
-    Description: ECR Repository URI
-    Value: !GetAtt ECRRepository.RepositoryUri
-    Export:
-      Name: !Sub ${AWS::StackName}-ECRRepository
 
   ECSClusterName:
     Description: ECS Cluster Name

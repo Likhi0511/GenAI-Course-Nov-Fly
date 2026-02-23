@@ -1,0 +1,66 @@
+[
+  {
+    "ParameterKey": "EnvironmentName",
+    "ParameterValue": "production"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "ray-document-pipeline"
+  },
+  {
+    "ParameterKey": "S3BucketName",
+    "ParameterValue": "ray-ingestion-prudhvi-2026"
+  },
+  {
+    "ParameterKey": "OpenAIApiKeySecretArn",
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-openai-6rzhmk"
+  },
+  {
+    "ParameterKey": "PineconeApiKeySecretArn",
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-pinecone-jxAGWv"
+  },
+  {
+    "ParameterKey": "RayDockerImageUri",
+    "ParameterValue": "107282186797.dkr.ecr.us-east-1.amazonaws.com/ray-document-pipeline-ray:latest"
+  },
+  {
+    "ParameterKey": "VpcCIDR",
+    "ParameterValue": "10.0.0.0/16"
+  },
+  {
+    "ParameterKey": "PublicSubnetCIDR",
+    "ParameterValue": "10.0.1.0/24"
+  },
+  {
+    "ParameterKey": "PrivateSubnetCIDR",
+    "ParameterValue": "10.0.2.0/24"
+  },
+  {
+    "ParameterKey": "RayHeadCPU",
+    "ParameterValue": "2048"
+  },
+  {
+    "ParameterKey": "RayHeadMemory",
+    "ParameterValue": "8192"
+  },
+  {
+    "ParameterKey": "RayWorkerCPU",
+    "ParameterValue": "1024"
+  },
+  {
+    "ParameterKey": "RayWorkerMemory",
+    "ParameterValue": "4096"
+  },
+  {
+    "ParameterKey": "MinWorkers",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "MaxWorkers",
+    "ParameterValue": "10"
+  },
+  {
+    "ParameterKey": "NotificationEmail",
+    "ParameterValue": "akella.prudhvi@yahoo.com"
+  }
+]
