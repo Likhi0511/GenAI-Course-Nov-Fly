@@ -62,5 +62,13 @@
   {
     "ParameterKey": "UseFargateSpot",
     "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "OpenAIApiKeySecretArn",
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-openai-6rzhmk"
+  },
+  {
+    "ParameterKey": "PineconeApiKeySecretArn",
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-pinecone-jxAGWv"
   }
 ]

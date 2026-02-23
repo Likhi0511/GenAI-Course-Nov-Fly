@@ -287,12 +287,9 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      # NOTE: S3 event notification is wired in BucketNotification resource below.
-      # It cannot live here because CloudFormation cannot resolve the circular
-      # dependency: DocumentBucket → S3EventLambda.Arn → S3TriggerLambdaPermission
-      # → DocumentBucket.Arn. Separating into AWS::S3::BucketNotification breaks
-      # the cycle: Lambda is created first, permission is granted, then notification
-      # is attached — all without touching the bucket resource itself.
+      # NOTE: S3 event notification is wired via a Custom Resource
+      # (S3BucketNotificationCustomResource) defined later in this template.
+      # See that resource's comments for the full circular dependency explanation.
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-documents'
@@ -603,30 +600,140 @@ Resources:
       SourceArn: !GetAtt DocumentBucket.Arn
       SourceAccount: !Ref AWS::AccountId
 
-  # FIX 1: Circular dependency resolution.
-  # S3 event notifications live here instead of inside DocumentBucket.Properties.
-  # Execution order guaranteed by DependsOn:
+  # ==========================================================================
+  # S3 BUCKET NOTIFICATION — CUSTOM RESOURCE PATTERN
+  # ==========================================================================
+  #
+  # WHY A CUSTOM RESOURCE?
+  # ──────────────────────
+  # AWS::S3::Bucket.Properties.NotificationConfiguration creates a circular
+  # dependency:
+  #
+  #   DocumentBucket  →  needs S3EventLambda.Arn  (to set up notification)
+  #   S3EventLambda   →  needs DocumentBucket.Arn (to grant permission via
+  #                       S3TriggerLambdaPermission)
+  #
+  # CloudFormation cannot resolve this cycle — it cannot create A before B
+  # and B before A simultaneously.
+  #
+  # AWS::S3::BucketNotification does NOT exist as a CloudFormation resource
+  # type (despite appearing in some blog posts). Attempting to use it causes:
+  #   "Unrecognized resource types: [AWS::S3::BucketNotification]"
+  #
+  # THE CORRECT FIX — Custom Resource:
+  # ────────────────────────────────────
+  # A Custom Resource is a CloudFormation mechanism that invokes a Lambda
+  # during stack Create/Update/Delete. We use it to call s3.put_bucket_notification
+  # AFTER both the bucket and the event Lambda exist.
+  #
+  # Execution order enforced by DependsOn:
   #   1. DocumentBucket is created (no notification yet)
   #   2. S3EventLambda is created
   #   3. S3TriggerLambdaPermission grants s3.amazonaws.com invoke rights
-  #   4. THIS resource attaches the notification — safe because the Lambda
-  #      permission already exists at this point.
-  DocumentBucketNotification:
-    Type: AWS::S3::BucketNotification
-    DependsOn: S3TriggerLambdaPermission   # Ensure permission exists before attaching trigger
+  #   4. S3NotificationCustomResource Lambda role is created
+  #   5. S3NotificationCustomResourceFunction Lambda is created
+  #   6. S3BucketNotificationCustomResource Custom Resource fires —
+  #      calls put_bucket_notification_configuration on the bucket
+  #      → S3 notification is now live
+  #
+  # On stack DELETE: the Custom Resource fires again with RequestType=Delete,
+  # which removes the notification so the bucket can be deleted cleanly.
+
+  # IAM role for the notification-wiring Lambda
+  S3NotificationCustomResourceRole:
+    Type: AWS::IAM::Role
     Properties:
-      Bucket: !Ref DocumentBucket
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt S3EventLambda.Arn
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: input/
-                  - Name: suffix
-                    Value: .pdf
+      RoleName: !Sub '${AWS::StackName}-s3-notification-cr-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3NotificationAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutBucketNotification
+                  - s3:GetBucketNotification
+                Resource: !GetAtt DocumentBucket.Arn
+
+  # Lambda that wires (or removes) the S3 notification during stack lifecycle
+  S3NotificationCustomResourceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-s3-notification-cr'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt S3NotificationCustomResourceRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import json
+
+          s3 = boto3.client('s3')
+
+          def handler(event, context):
+              print(f"RequestType: {event['RequestType']}")
+              print(f"ResourceProperties: {json.dumps(event['ResourceProperties'])}")
+
+              bucket     = event['ResourceProperties']['BucketName']
+              lambda_arn = event['ResourceProperties']['LambdaArn']
+
+              try:
+                  if event['RequestType'] in ('Create', 'Update'):
+                      # Wire the S3 → Lambda notification
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket,
+                          NotificationConfiguration={
+                              'LambdaFunctionConfigurations': [
+                                  {
+                                      'LambdaFunctionArn': lambda_arn,
+                                      'Events': ['s3:ObjectCreated:*'],
+                                      'Filter': {
+                                          'Key': {
+                                              'FilterRules': [
+                                                  {'Name': 'prefix', 'Value': 'input/'},
+                                                  {'Name': 'suffix', 'Value': '.pdf'}
+                                              ]
+                                          }
+                                      }
+                                  }
+                              ]
+                          }
+                      )
+                      print(f"✓ S3 notification configured: s3://{bucket}/input/*.pdf → {lambda_arn}")
+
+                  elif event['RequestType'] == 'Delete':
+                      # Remove notification so the bucket can be deleted cleanly
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket,
+                          NotificationConfiguration={}
+                      )
+                      print(f"✓ S3 notification removed from {bucket}")
+
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+              except Exception as e:
+                  print(f"ERROR: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  # Custom Resource — fires the Lambda above during Create / Update / Delete
+  S3BucketNotificationCustomResource:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: S3TriggerLambdaPermission   # Permission must exist before wiring notification
+    Properties:
+      ServiceToken: !GetAtt S3NotificationCustomResourceFunction.Arn
+      BucketName: !Ref DocumentBucket
+      LambdaArn: !GetAtt S3EventLambda.Arn
 
   # ==========================================================================
   # IAM ROLES

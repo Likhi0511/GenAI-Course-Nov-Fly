@@ -1046,6 +1046,4 @@ Outputs → expose resource IDs/names to CLI and other stacks
 Every `!Ref`, `!GetAtt`, and `!Sub` you see is a link between sections — CloudFormation follows these links to determine the correct creation order automatically.
 
 ---
-
-*Course: Applied GenAI | Module: Distributed RAG Pipelines with Ray on AWS ECS*  
-*Vidya Sankalp — Instructor: Prudhvi Akella, Thoughtworks*
+![Alt text for the image](Gemini_Generated_Image_oswkxioswkxioswk.png)
