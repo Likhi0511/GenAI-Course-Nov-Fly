@@ -1,56 +1,36 @@
 # =============================================================================
-# RAY DOCUMENT PIPELINE — REQUIREMENTS
+# RAY DOCUMENT PIPELINE — REQUIREMENTS (CLEANED)
 # =============================================================================
-# Python 3.12 (Ray 2.53.0 base image — rayproject/ray:2.53.0-py312)
-# All packages now compatible — no version ceiling constraints needed
+# Python 3.12 — rayproject/ray:2.53.0-py312-cpu base image
+# ray[default] already in base image — not listed to avoid redundant reinstall
+#
+# Removed 15 unused packages after auditing all source files:
+#   pydantic-settings, requests, httpx, rich, scipy, scikit-learn,
+#   beautifulsoup4, unstructured, python-docx, python-pptx, openpyxl,
+#   pymupdf, pypdf, pdf2image, structlog
 # =============================================================================
-
-# ── Ray ───────────────────────────────────────────────────────────────────────
-ray[default]==2.53.0
-ray[data]==2.53.0
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
 boto3==1.42.5
 
 # ── Document processing ───────────────────────────────────────────────────────
-docling
-python-docx
-python-pptx
-openpyxl
-pypdf
-pymupdf
-pdf2image
-unstructured
-beautifulsoup4
+docling                  # PDF extraction, layout detection, table structure
+pandas                   # Table → Markdown conversion in docling_bounded_extractor.py
+tabulate                 # Required by pandas .to_markdown()
 
 # ── AI / ML ───────────────────────────────────────────────────────────────────
-openai
+openai                   # Enrichment, embeddings, GPT-4o image descriptions
 
 # ── Vector database ───────────────────────────────────────────────────────────
 pinecone==8.0.0
 
-# ── Data ─────────────────────────────────────────────────────────────────────
-pandas
-numpy
-scipy
-scikit-learn
-
 # ── Images ───────────────────────────────────────────────────────────────────
-pillow
+pillow                   # PIL Image used in docling_bounded_extractor.py
 
-# ── Retry / progress / display ───────────────────────────────────────────────
-tenacity
-tqdm
-rich
-tabulate
-
-# ── Logging ──────────────────────────────────────────────────────────────────
-structlog
+# ── Retry ────────────────────────────────────────────────────────────────────
+tenacity                 # Retry logic in openai_embeddings.py
+tqdm                     # Progress loop in openai_embeddings.py embedding batch
 
 # ── Utilities ────────────────────────────────────────────────────────────────
-python-dotenv
-pydantic>=2.8.0
-pydantic-settings
-requests
-httpx
-aiohttp
+python-dotenv            # .env loading for local development
+pydantic>=2.8.0          # Type validation (used indirectly via config/models)

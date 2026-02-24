@@ -44,15 +44,15 @@ Parameters:
 
   RayWorkerMemory:
     Type: Number
-    Default: 4096
-    Description: Memory for each Ray Worker in MB
+    Default: 16384
+    Description: Memory for each Ray Worker in MB (16GB recommended for large PDFs)
     AllowedValues: [2048, 4096, 8192, 16384]
 
   # Auto-Scaling Configuration
   MinWorkers:
     Type: Number
     Default: 1
-    Description: Minimum number of Ray workers
+    Description: Minimum number of Ray workers (always running, ready for work)
     MinValue: 0
     MaxValue: 10
 
@@ -62,11 +62,6 @@ Parameters:
     Description: Maximum number of Ray workers
     MinValue: 1
     MaxValue: 50
-
-  TargetCPUUtilization:
-    Type: Number
-    Default: 70
-    Description: Target CPU utilization for auto-scaling
 
   # Container Image
   ECRImageUri:
@@ -432,6 +427,7 @@ Resources:
   S3EventLambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-s3-handler'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -642,6 +638,7 @@ Resources:
   S3NotificationCustomResourceRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub '${AWS::StackName}-s3-notification-cr-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -740,6 +737,7 @@ Resources:
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-execution-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -764,6 +762,7 @@ Resources:
   ECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub '${AWS::StackName}-ecs-task-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -883,8 +882,6 @@ Resources:
         - FARGATE
       Cpu: !Ref RayHeadCPU
       Memory: !Ref RayHeadMemory
-      EphemeralStorage:
-        SizeInGiB: 50
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
@@ -900,12 +897,12 @@ Resources:
               echo "RAY HEAD NODE STARTUP"
               echo "=========================================="
               
-              RAY_memory_monitor_refresh_ms=0 ray start --head \
+              ray start --head \
                     --port=6379 \
                     --dashboard-host=0.0.0.0 \
                     --dashboard-port=8265 \
                     --num-cpus=0 \
-                    --object-store-memory=2000000000 \
+                    --object-store-memory=1000000000 \
                     --plasma-directory=/tmp \
                     --include-dashboard=true \
                     --disable-usage-stats &
@@ -986,8 +983,6 @@ Resources:
         - FARGATE
       Cpu: !Ref RayWorkerCPU
       Memory: !Ref RayWorkerMemory
-      EphemeralStorage:
-        SizeInGiB: 50
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
@@ -998,31 +993,23 @@ Resources:
             - /bin/bash
             - -c
             - |
+              set -e
               echo "=========================================="
               echo "RAY WORKER NODE STARTUP"
               echo "=========================================="
               
               echo "Waiting for Ray head at ray-head.local:6379..."
-              ATTEMPTS=0
-              MAX_ATTEMPTS=60
-              until ray health-check --address=ray-head.local:6379; do
-                ATTEMPTS=1
-                if [  -ge  ]; then
-                  echo "ERROR: Ray head not reachable after  attempts"
-                  exit 1
-                fi
-                echo "Attempt / — retrying in 5s..."
+              until ray health-check --address=ray-head.local:6379 2>/dev/null; do
                 sleep 5
               done
               
               echo "=========================================="
               echo "STARTING RAY WORKER"
               echo "=========================================="
-              RAY_memory_monitor_refresh_ms=0 ray start \
+              ray start \
                 --address=ray-head.local:6379 \
-                --object-store-memory=2000000000 \
+                --object-store-memory=1000000000 \
                 --plasma-directory=/tmp \
-                --num-cpus=2 \
                 --disable-usage-stats \
                 --block
           Environment:
@@ -1038,10 +1025,8 @@ Resources:
               Value: !Ref ControlTable
             - Name: DYNAMODB_AUDIT_TABLE
               Value: !Ref AuditTable
-            - Name: DYNAMODB_METRICS_TABLE
-              Value: !Ref MetricsTable
             - Name: LOG_LEVEL
-              Value: DEBUG
+              Value: INFO
             - Name: PYTHONUNBUFFERED
               Value: "1"
           Secrets:
@@ -1058,11 +1043,11 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - ray health-check --address=ray-head.local:6379 || exit 1
+              - ray status || exit 1
             Interval: 30
-            Timeout: 10
-            Retries: 5
-            StartPeriod: 180
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 120
 
   # ==========================================================================
   # SERVICE DISCOVERY
@@ -1145,7 +1130,155 @@ Resources:
             Base: !Ref MinWorkers
 
   # ==========================================================================
-  # AUTO-SCALING
+  # QUEUE-DEPTH METRIC PUBLISHER
+  # --------------------------------------------------------------------------
+  # WHY NOT TargetTracking on CPU/Memory?
+  # Ray workers sit IDLE between tasks — ECS sees 0% CPU → autoscaler tries
+  # to scale IN. When a task runs, CPU spikes to 90%+ but by then 15-min
+  # cooldown means scale-out never catches up. TargetTracking is the wrong
+  # strategy for a task-queue worker pool.
+  #
+  # THE FIX — Step Scaling on DynamoDB PENDING count:
+  # A Lambda runs every 60s, counts PENDING items in the control table, and
+  # publishes a custom CloudWatch metric: RayPipeline/PendingDocuments.
+  # Step Scaling alarms on that metric:
+  #   - PendingDocuments >= 1  → scale OUT (add workers)
+  #   - PendingDocuments == 0  → scale IN  (remove idle workers after cooldown)
+  # This gives immediate, accurate scale-out the moment work arrives.
+  # ==========================================================================
+
+  QueueMetricPublisherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-queue-metric-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBQueryAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  - !Sub '${ControlTable.Arn}/index/status-updated-index'
+        - PolicyName: CloudWatchPutMetric
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+
+  QueueMetricPublisherFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-queue-metric-publisher'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt QueueMetricPublisherRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          CONTROL_TABLE_NAME: !Ref ControlTable
+          STACK_NAME: !Ref AWS::StackName
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          from datetime import datetime
+
+          dynamodb = boto3.client('dynamodb')
+          cloudwatch = boto3.client('cloudwatch')
+
+          def handler(event, context):
+              table = os.environ['CONTROL_TABLE_NAME']
+              stack = os.environ['STACK_NAME']
+
+              # Count PENDING documents using the GSI
+              resp = dynamodb.query(
+                  TableName=table,
+                  IndexName='status-updated-index',
+                  KeyConditionExpression='#s = :pending',
+                  ExpressionAttributeNames={'#s': 'status'},
+                  ExpressionAttributeValues={':pending': {'S': 'PENDING'}},
+                  Select='COUNT'
+              )
+              pending_count = resp.get('Count', 0)
+
+              # Also count IN_PROGRESS so we can track total active work
+              resp2 = dynamodb.query(
+                  TableName=table,
+                  IndexName='status-updated-index',
+                  KeyConditionExpression='#s = :inprog',
+                  ExpressionAttributeNames={'#s': 'status'},
+                  ExpressionAttributeValues={':inprog': {'S': 'IN_PROGRESS'}},
+                  Select='COUNT'
+              )
+              inprogress_count = resp2.get('Count', 0)
+
+              print(f"PENDING={pending_count} IN_PROGRESS={inprogress_count}")
+
+              # Publish both metrics to CloudWatch
+              cloudwatch.put_metric_data(
+                  Namespace='RayPipeline',
+                  MetricData=[
+                      {
+                          'MetricName': 'PendingDocuments',
+                          'Dimensions': [{'Name': 'StackName', 'Value': stack}],
+                          'Value': float(pending_count),
+                          'Unit': 'Count',
+                          'Timestamp': datetime.utcnow()
+                      },
+                      {
+                          'MetricName': 'ActiveDocuments',
+                          'Dimensions': [{'Name': 'StackName', 'Value': stack}],
+                          'Value': float(inprogress_count),
+                          'Unit': 'Count',
+                          'Timestamp': datetime.utcnow()
+                      }
+                  ]
+              )
+              return {'pending': pending_count, 'inprogress': inprogress_count}
+
+  QueueMetricPublisherLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-queue-metric-publisher'
+      RetentionInDays: 3
+
+  # EventBridge rule — fires every 60 seconds
+  QueueMetricScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-queue-metric-schedule'
+      Description: Publishes PendingDocuments metric to CloudWatch every minute
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt QueueMetricPublisherFunction.Arn
+          Id: QueueMetricPublisher
+
+  QueueMetricSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref QueueMetricPublisherFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt QueueMetricScheduleRule.Arn
+
+  # ==========================================================================
+  # AUTO-SCALING — Step Scaling on PendingDocuments queue depth
   # ==========================================================================
 
   WorkerScalingTarget:
@@ -1158,34 +1291,126 @@ Resources:
       MaxCapacity: !Ref MaxWorkers
       RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
 
-  WorkerCPUScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+  # Alarm: work is queued → scale OUT
+  PendingDocumentsHighAlarm:
+    Type: AWS::CloudWatch::Alarm
     Properties:
-      PolicyName: !Sub '${AWS::StackName}-worker-cpu-scaling'
-      PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref WorkerScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
-        TargetValue: !Ref TargetCPUUtilization
-        ScaleInCooldown: 300
-        ScaleOutCooldown: 60
+      AlarmName: !Sub '${AWS::StackName}-pending-docs-high'
+      AlarmDescription: Documents waiting to be processed — scale out workers
+      Namespace: RayPipeline
+      MetricName: PendingDocuments
+      Dimensions:
+        - Name: StackName
+          Value: !Ref AWS::StackName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
-  WorkerMemoryScalingPolicy:
+  # Alarm: queue empty → scale IN
+  PendingDocumentsLowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-pending-docs-low'
+      AlarmDescription: No documents pending — scale in workers
+      Namespace: RayPipeline
+      MetricName: PendingDocuments
+      Dimensions:
+        - Name: StackName
+          Value: !Ref AWS::StackName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      # Must be zero for 5 consecutive minutes before scaling in
+      # Prevents premature scale-in while orchestrator is dispatching
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+
+  # Step Scaling OUT policy — triggers immediately when work arrives
+  WorkerScaleOutPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
     Properties:
-      PolicyName: !Sub '${AWS::StackName}-worker-memory-scaling'
-      PolicyType: TargetTrackingScaling
+      PolicyName: !Sub '${AWS::StackName}-worker-scale-out'
+      PolicyType: StepScaling
       ScalingTargetId: !Ref WorkerScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageMemoryUtilization
-        TargetValue: 80
-        ScaleInCooldown: 300
-        ScaleOutCooldown: 60
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ExactCapacity
+        Cooldown: 60
+        MetricAggregationType: Maximum
+        StepAdjustments:
+          # 1–3 pending docs  → 2 workers
+          - MetricIntervalLowerBound: 0
+            MetricIntervalUpperBound: 3
+            ScalingAdjustment: 2
+          # 4–9 pending docs  → 4 workers
+          - MetricIntervalLowerBound: 3
+            MetricIntervalUpperBound: 9
+            ScalingAdjustment: 4
+          # 10+ pending docs  → MaxWorkers
+          - MetricIntervalLowerBound: 9
+            ScalingAdjustment: !Ref MaxWorkers
+
+  # Step Scaling IN policy — only fires after 5 consecutive zero-queue minutes
+  WorkerScaleInPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-worker-scale-in'
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref WorkerScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ExactCapacity
+        Cooldown: 300
+        MetricAggregationType: Maximum
+        StepAdjustments:
+          # Queue empty → scale back to MinWorkers
+          - MetricIntervalUpperBound: 0
+            ScalingAdjustment: !Ref MinWorkers
+
+  # Wire alarms to scaling policies
+  WorkerScaleOutPolicyAlarmAssociation:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-scale-out-trigger'
+      AlarmDescription: Triggers scale-out when documents are pending
+      Namespace: RayPipeline
+      MetricName: PendingDocuments
+      Dimensions:
+        - Name: StackName
+          Value: !Ref AWS::StackName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref WorkerScaleOutPolicy
+
+  WorkerScaleInPolicyAlarmAssociation:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-scale-in-trigger'
+      AlarmDescription: Triggers scale-in when queue is empty for 5 minutes
+      Namespace: RayPipeline
+      MetricName: PendingDocuments
+      Dimensions:
+        - Name: StackName
+          Value: !Ref AWS::StackName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      OKActions:
+        - !Ref WorkerScaleInPolicy
 
   # ==========================================================================
-  # CLOUDWATCH ALARMS
+  # CLOUDWATCH ALARMS — Operational alerts (NOT used for autoscaling)
+  # Autoscaling is handled by WorkerScaleOut/InPolicyAlarmAssociation above.
   # ==========================================================================
 
   RayHeadDownAlarm:
@@ -1215,25 +1440,17 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub '${AWS::StackName}-no-workers'
-      AlarmDescription: No Ray workers are running
-      MetricName: RunningTaskCount
-      Namespace: AWS/ECS
-      Statistic: Average
+      AlarmDescription: No Ray workers running while documents are pending
+      Namespace: RayPipeline
+      MetricName: PendingDocuments
+      Dimensions:
+        - Name: StackName
+          Value: !Ref AWS::StackName
+      Statistic: Maximum
       Period: 300
-      # FIX 7: Changed EvaluationPeriods from 1 to 3 and TreatMissingData from
-      # "breaching" to "notBreaching". Previously the alarm fired the moment the
-      # stack deployed because no metric data exists yet — CloudWatch treated
-      # missing data as a breach and immediately sent an alert email.
-      # With notBreaching + 3 periods (15 min), workers have time to start before
-      # the alarm can possibly trigger.
       EvaluationPeriods: 3
       Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      Dimensions:
-        - Name: ServiceName
-          Value: !GetAtt RayWorkerService.Name
-        - Name: ClusterName
-          Value: !Ref ECSCluster
+      ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: !If
         - HasAlertEmail
@@ -1244,7 +1461,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub '${AWS::StackName}-workers-at-max'
-      AlarmDescription: Ray workers at maximum capacity
+      AlarmDescription: Ray workers at maximum capacity — consider raising MaxWorkers
       MetricName: RunningTaskCount
       Namespace: AWS/ECS
       Statistic: Average
@@ -1257,6 +1474,29 @@ Resources:
           Value: !GetAtt RayWorkerService.Name
         - Name: ClusterName
           Value: !Ref ECSCluster
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertEmail
+        - [!Ref AlertTopic]
+        - !Ref AWS::NoValue
+
+  StuckDocumentsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-stuck-documents'
+      AlarmDescription: Documents have been PENDING for more than 30 minutes — pipeline may be stalled
+      Namespace: RayPipeline
+      MetricName: PendingDocuments
+      Dimensions:
+        - Name: StackName
+          Value: !Ref AWS::StackName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 6
+      # 6 x 5min = 30 minutes of non-zero pending
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
       AlarmActions: !If
         - HasAlertEmail
         - [!Ref AlertTopic]
@@ -1302,6 +1542,14 @@ Outputs:
   AlertTopicArn:
     Description: SNS Topic ARN for Alerts
     Value: !If [HasAlertEmail, !Ref AlertTopic, 'Not configured']
+
+  QueueMetricPublisherArn:
+    Description: Lambda that publishes PendingDocuments metric every 60s
+    Value: !GetAtt QueueMetricPublisherFunction.Arn
+
+  AutoScalingStrategy:
+    Description: Autoscaling strategy in use
+    Value: !Sub 'Step Scaling on RayPipeline/PendingDocuments. Scale-OUT within 60s of work arriving. Scale-IN after 5min empty queue. Min=${MinWorkers} Max=${MaxWorkers} workers.'
 
   QuickStart:
     Description: Quick start commands

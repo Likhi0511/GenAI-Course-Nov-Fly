@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "S3BucketName",
-    "ParameterValue": "ray-ingestion-prudhvi-3-feb-2026"
+    "ParameterValue": "ray-ingestion-prudhvi-6-feb-2026"
   },
   {
     "ParameterKey": "RayHeadCPU",
@@ -36,10 +36,6 @@
     "ParameterValue": "10"
   },
   {
-    "ParameterKey": "TargetCPUUtilization",
-    "ParameterValue": "70"
-  },
-  {
     "ParameterKey": "ECRImageUri",
     "ParameterValue": "107282186797.dkr.ecr.us-east-1.amazonaws.com/ray-document-pipeline-ray:latest"
   },
@@ -53,7 +49,7 @@
   },
   {
     "ParameterKey": "AlertEmail",
-    "ParameterValue": "akella.prudhvi@yahoo.com"
+    "ParameterValue": "prudhvi.akella@yahoo.com"
   },
   {
     "ParameterKey": "Environment",
