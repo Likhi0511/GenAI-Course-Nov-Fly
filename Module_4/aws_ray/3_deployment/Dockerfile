@@ -10,7 +10,6 @@
 #   5. Loading     - load_embeddings_to_pinecone.py (Pinecone serverless)
 #
 # Author: Prudhvi
-# Organization: Thoughtworks
 
 FROM rayproject/ray:2.53.0-py312
 
@@ -18,9 +17,13 @@ FROM rayproject/ray:2.53.0-py312
 WORKDIR /app
 
 # System dependencies
-# poppler-utils: required by pdf2image for PDF -> PNG rendering
+# System dependencies
+# poppler-utils: required by pdf2image
+# libgl1/libgomp1: required by Docling/PyTorch to prevent raylet initialization crashes
 RUN sudo apt-get update && sudo apt-get install -y \
     poppler-utils \
+    libgl1-mesa-glx \
+    libgomp1 \
     && sudo rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
@@ -41,4 +44,4 @@ ENV RAY_ADDRESS=auto
 EXPOSE 6379 8265 10001
 
 # Default command (can be overridden)
-CMD ["python", "ray_orchestrator.py"]
+#CMD ["python", "ray_orchestrator.py"]

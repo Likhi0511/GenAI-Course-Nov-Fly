@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "S3BucketName",
-    "ParameterValue": "ray-ingestion-prudhvi-2026"
+    "ParameterValue": "ray-ingestion-prudhvi-3-feb-2026"
   },
   {
     "ParameterKey": "RayHeadCPU",
@@ -25,7 +25,7 @@
   },
   {
     "ParameterKey": "RayWorkerMemory",
-    "ParameterValue": "4096"
+    "ParameterValue": "8192"
   },
   {
     "ParameterKey": "MinWorkers",
@@ -62,13 +62,5 @@
   {
     "ParameterKey": "UseFargateSpot",
     "ParameterValue": "true"
-  },
-  {
-    "ParameterKey": "OpenAIApiKeySecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-openai-6rzhmk"
-  },
-  {
-    "ParameterKey": "PineconeApiKeySecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-pinecone-jxAGWv"
   }
 ]

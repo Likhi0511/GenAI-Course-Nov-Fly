@@ -752,10 +752,21 @@ def main():
     logger.info("=" * 70)
 
     try:
-        # Logic to handle empty or missing RAY_ADDRESS
-        ray_addr = config.RAY_ADDRESS if config.RAY_ADDRESS and config.RAY_ADDRESS.strip() else None
+        # Determine the correct Ray address:
+        #
+        # Head node  → CloudFormation sets RAY_ADDRESS=""  (empty string)
+        #              We pass "auto" so ray.init() connects to the local cluster
+        #              that `ray start --head` already started on 127.0.0.1:6379.
+        #              Passing None would start a NEW cluster (fails — port in use).
+        #              Passing ""  raises "Invalid address format: "
+        #
+        # Worker node → CloudFormation sets RAY_ADDRESS="ray-head.local:6379"
+        #               We pass it directly so the worker joins the head cluster.
+        raw_addr = config.RAY_ADDRESS.strip() if config.RAY_ADDRESS else ""
+        ray_addr = "auto" if not raw_addr else raw_addr
+
         ray.init(
-            address=ray_addr,      # e.g. "ray://ray-head.internal:10001"
+            address=ray_addr,        # "auto" on head node, "ray-head.local:6379" on workers
             namespace=config.RAY_NAMESPACE,  # Isolates this app's tasks from other Ray apps
             logging_level=config.LOG_LEVEL,  # Propagate log level to Ray internals
         )

@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 
+
 class PipelineConfig:
     """
     FIXED VERSION: Includes missing resource constants and S3 prefixes
@@ -12,7 +13,7 @@ class PipelineConfig:
     # ========================================================================
     AWS_REGION: str = os.getenv('AWS_REGION', 'us-east-1')
     S3_BUCKET: str = os.getenv('S3_BUCKET', '')
-    
+
     DYNAMODB_CONTROL_TABLE: str = os.getenv('DYNAMODB_CONTROL_TABLE', '')
     DYNAMODB_AUDIT_TABLE: str = os.getenv('DYNAMODB_AUDIT_TABLE', '')
     DYNAMODB_METRICS_TABLE: str = os.getenv('DYNAMODB_METRICS_TABLE', '')
@@ -20,16 +21,20 @@ class PipelineConfig:
     # ========================================================================
     # RAY CLUSTER CONFIGURATION
     # ========================================================================
-    # Critical Fix: RAY_ADDRESS must be "auto" on Head Node
+    # RAY_ADDRESS is injected by CloudFormation:
+    #   Head node:   RAY_ADDRESS = ""  (empty string → orchestrator converts to "auto")
+    #   Worker node: RAY_ADDRESS = "ray-head.local:6379"
+    # Default "auto" works for local development where Ray is already running.
+    # The orchestrator handles the "" → "auto" conversion — see ray_orchestrator.py.
     RAY_ADDRESS: str = os.getenv('RAY_ADDRESS', 'auto')
     RAY_NAMESPACE: str = os.getenv('RAY_NAMESPACE', 'document-pipeline')
 
     # ------------------------------------------------------------------------
     # RAY RESOURCE ALLOCATION (Fixes AttributeError: 'EXTRACTION_NUM_CPUS')
     # ------------------------------------------------------------------------
-    # These constants are explicitly required by @ray.remote decorators 
+    # These constants are explicitly required by @ray.remote decorators
     # in ray_tasks.py.
-    
+
     # Stage 1: Extraction
     EXTRACTION_NUM_CPUS: int = 1
     EXTRACTION_MEMORY_MB: int = 2048
@@ -63,7 +68,7 @@ class PipelineConfig:
     # ========================================================================
     # STAGE-SPECIFIC PARAMETERS
     # ========================================================================
-    
+
     # Stage 2: Chunking Strategy
     CHUNK_TARGET_SIZE: int = 1500
     CHUNK_MIN_SIZE: int = 500
@@ -86,7 +91,7 @@ class PipelineConfig:
     # ========================================================================
     OPENAI_API_KEY: str = os.getenv('OPENAI_API_KEY', '')
     PINECONE_API_KEY: str = os.getenv('PINECONE_API_KEY', '')
-    
+
     POLLING_INTERVAL: int = int(os.getenv('POLLING_INTERVAL', '30'))
     MAX_DOCUMENTS_PER_POLL: int = int(os.getenv('MAX_DOCUMENTS_PER_POLL', '10'))
     PROCESSING_VERSION: str = os.getenv('PROCESSING_VERSION', 'v1')
@@ -101,7 +106,7 @@ class PipelineConfig:
             (cls.OPENAI_API_KEY, "OPENAI_API_KEY"),
             (cls.PINECONE_API_KEY, "PINECONE_API_KEY")
         ]
-        
+
         missing = [name for val, name in required if not val]
         if missing:
             print(f"❌ CONFIGURATION ERROR: Missing {', '.join(missing)}")
@@ -114,5 +119,6 @@ class PipelineConfig:
         print("PIPELINE CONFIGURATION LOADED")
         print(f"Bucket: {cls.S3_BUCKET} | Region: {cls.AWS_REGION}")
         print(f"Ray: {cls.RAY_ADDRESS} | Namespace: {cls.RAY_NAMESPACE}")
+
 
 config = PipelineConfig()

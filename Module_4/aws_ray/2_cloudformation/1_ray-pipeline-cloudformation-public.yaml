@@ -432,7 +432,6 @@ Resources:
   S3EventLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-lambda-s3-handler'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -643,7 +642,6 @@ Resources:
   S3NotificationCustomResourceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-s3-notification-cr-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -742,7 +740,6 @@ Resources:
   ECSTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-ecs-execution-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -767,7 +764,6 @@ Resources:
   ECSTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub '${AWS::StackName}-ecs-task-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -887,6 +883,8 @@ Resources:
         - FARGATE
       Cpu: !Ref RayHeadCPU
       Memory: !Ref RayHeadMemory
+      EphemeralStorage:
+        SizeInGiB: 50
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
@@ -902,13 +900,15 @@ Resources:
               echo "RAY HEAD NODE STARTUP"
               echo "=========================================="
               
-              ray start --head \
-                --port=6379 \
-                --dashboard-host=0.0.0.0 \
-                --dashboard-port=8265 \
-                --num-cpus=0 \
-                --include-dashboard=true \
-                --disable-usage-stats &
+              RAY_memory_monitor_refresh_ms=0 ray start --head \
+                    --port=6379 \
+                    --dashboard-host=0.0.0.0 \
+                    --dashboard-port=8265 \
+                    --num-cpus=0 \
+                    --object-store-memory=2000000000 \
+                    --plasma-directory=/tmp \
+                    --include-dashboard=true \
+                    --disable-usage-stats &
               
               RAY_PID=$!
               
@@ -986,33 +986,43 @@ Resources:
         - FARGATE
       Cpu: !Ref RayWorkerCPU
       Memory: !Ref RayWorkerMemory
+      EphemeralStorage:
+        SizeInGiB: 50
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: ray-worker
-          LinuxParameters:
-            SharedMemorySize: 2048 # Allocated in MiB
           Image: !Ref ECRImageUri
           Essential: true
           Command:
             - /bin/bash
             - -c
             - |
-              set -e
               echo "=========================================="
               echo "RAY WORKER NODE STARTUP"
               echo "=========================================="
               
               echo "Waiting for Ray head at ray-head.local:6379..."
-              until ray health-check --address=ray-head.local:6379 2>/dev/null; do
+              ATTEMPTS=0
+              MAX_ATTEMPTS=60
+              until ray health-check --address=ray-head.local:6379; do
+                ATTEMPTS=1
+                if [  -ge  ]; then
+                  echo "ERROR: Ray head not reachable after  attempts"
+                  exit 1
+                fi
+                echo "Attempt / — retrying in 5s..."
                 sleep 5
               done
               
               echo "=========================================="
               echo "STARTING RAY WORKER"
               echo "=========================================="
-              ray start \
+              RAY_memory_monitor_refresh_ms=0 ray start \
                 --address=ray-head.local:6379 \
+                --object-store-memory=2000000000 \
+                --plasma-directory=/tmp \
+                --num-cpus=2 \
                 --disable-usage-stats \
                 --block
           Environment:
@@ -1028,8 +1038,10 @@ Resources:
               Value: !Ref ControlTable
             - Name: DYNAMODB_AUDIT_TABLE
               Value: !Ref AuditTable
+            - Name: DYNAMODB_METRICS_TABLE
+              Value: !Ref MetricsTable
             - Name: LOG_LEVEL
-              Value: INFO
+              Value: DEBUG
             - Name: PYTHONUNBUFFERED
               Value: "1"
           Secrets:
@@ -1046,11 +1058,11 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - ray status || exit 1
+              - ray health-check --address=ray-head.local:6379 || exit 1
             Interval: 30
-            Timeout: 5
-            Retries: 3
-            StartPeriod: 120
+            Timeout: 10
+            Retries: 5
+            StartPeriod: 180
 
   # ==========================================================================
   # SERVICE DISCOVERY

@@ -1040,7 +1040,7 @@ def build_and_push_docker(region: str, account_id: str):
 
     # Detect Apple Silicon — must build for linux/amd64 to run on ECS Fargate
     is_arm_mac = (platform.system() == "Darwin" and platform.machine() == "arm64")
-    build_cmd  = ["docker", "buildx", "build"]
+    build_cmd  = ["docker", "buildx", "build","--no-cache"]
     if is_arm_mac:
         build_cmd += ["--platform", "linux/amd64"]
     build_cmd += ["-t", local_tag, deployment_dir]
