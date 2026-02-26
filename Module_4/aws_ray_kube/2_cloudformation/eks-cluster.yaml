@@ -1,0 +1,1045 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Ray Document Pipeline — EKS Infrastructure
+  Creates: VPC, EKS Cluster, Managed Node Group, IRSA, DynamoDB tables,
+  S3 bucket, Lambda S3 event handler, SNS alerts.
+  Python application code (ray_orchestrator.py, ray_tasks.py, config.py) is UNCHANGED.
+  KubeRay operator + RayCluster manifest are in separate files (kuberay-setup.sh, ray-cluster.yaml).
+
+# ============================================================================
+# PARAMETERS
+# ============================================================================
+
+Parameters:
+
+  # Network
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+
+  # S3
+  S3BucketName:
+    Type: String
+    Default: ray-document-pipeline
+    Description: Bucket name — account ID appended for uniqueness
+
+  # EKS
+  KubernetesVersion:
+    Type: String
+    Default: "1.30"
+    AllowedValues: ["1.28", "1.29", "1.30"]
+
+  NodeInstanceType:
+    Type: String
+    Default: m5.4xlarge
+    Description: >
+      m5.4xlarge = 16 vCPU / 64 GB RAM.
+      Fits 3 Ray workers (4 CPU / 16 GB each) per node with headroom.
+      For 10 workers you need ~4 nodes. EKS cluster autoscaler handles this.
+    AllowedValues:
+      - m5.2xlarge    # 8vCPU  / 32GB  — 1 worker/node, tight
+      - m5.4xlarge    # 16vCPU / 64GB  — 3 workers/node, recommended
+      - m5.8xlarge    # 32vCPU / 128GB — 7 workers/node, large batches
+      - r5.2xlarge    # 8vCPU  / 64GB  — memory-optimised, OOM protection
+      - r5.4xlarge    # 16vCPU / 128GB — memory-optimised, 7 workers/node
+
+  NodeMinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum EC2 nodes (cluster autoscaler floor)
+
+  NodeMaxSize:
+    Type: Number
+    Default: 5
+    Description: Maximum EC2 nodes (cluster autoscaler ceiling)
+
+  NodeDesiredSize:
+    Type: Number
+    Default: 2
+    Description: Initial EC2 node count
+
+  # Container Image
+  ECRImageUri:
+    Type: String
+    Description: ECR image URI (same image as ECS — no changes needed)
+
+  # Secrets
+  OpenAISecretArn:
+    Type: String
+    Description: ARN of OpenAI API key in Secrets Manager
+
+  PineconeSecretArn:
+    Type: String
+    Description: ARN of Pinecone API key in Secrets Manager
+
+  # Ray workers
+  MinRayWorkers:
+    Type: Number
+    Default: 1
+    Description: KubeRay minReplicas — workers always running
+
+  MaxRayWorkers:
+    Type: Number
+    Default: 10
+    Description: KubeRay maxReplicas — KubeRay autoscaler ceiling
+
+  # Alerts
+  AlertEmail:
+    Type: String
+    Default: ""
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+
+# ============================================================================
+# CONDITIONS
+# ============================================================================
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
+
+Resources:
+
+  # ==========================================================================
+  # NETWORKING
+  # Two public subnets in different AZs — EKS requires at least 2 AZs.
+  # Nodes get public IPs (simplest setup for a course/demo environment).
+  # For production: add private subnets + NAT Gateway.
+  # ==========================================================================
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc'
+        # EKS requires these tags on the VPC for load balancer auto-discovery
+        - Key: !Sub 'kubernetes.io/cluster/${AWS::StackName}-eks'
+          Value: shared
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-1'
+        # Required for EKS to discover subnets for node groups and load balancers
+        - Key: !Sub 'kubernetes.io/cluster/${AWS::StackName}-eks'
+          Value: shared
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-2'
+        - Key: !Sub 'kubernetes.io/cluster/${AWS::StackName}-eks'
+          Value: shared
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  Subnet1RouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet2RouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # VPC Endpoints — keep S3 and DynamoDB traffic on the AWS backbone (free, fast)
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds:
+        - !Ref PublicRouteTable
+      VpcEndpointType: Gateway
+
+  DynamoDBVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      RouteTableIds:
+        - !Ref PublicRouteTable
+      VpcEndpointType: Gateway
+
+  # ==========================================================================
+  # SECURITY GROUPS
+  # ==========================================================================
+
+  # Control plane SG — EKS manages this internally, we reference it for node rules
+  EKSClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-eks-cluster-sg'
+      GroupDescription: EKS cluster control plane security group
+      VpcId: !Ref VPC
+
+  # Node group SG — allows all traffic between nodes (Ray inter-node communication)
+  NodeGroupSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-node-sg'
+      GroupDescription: Security group for EKS worker nodes running Ray
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-node-sg'
+        # Required for EKS to recognise nodes as cluster members
+        - Key: !Sub 'kubernetes.io/cluster/${AWS::StackName}-eks'
+          Value: owned
+
+  # All node-to-node traffic (Ray uses dynamic ports 20000-30000 + Redis + gRPC)
+  NodeToNodeIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref NodeGroupSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref NodeGroupSecurityGroup
+
+  # Allow EKS control plane to reach node kubelets (443 + 10250)
+  ControlPlaneToNodeIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref NodeGroupSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref EKSClusterSecurityGroup
+
+  ControlPlaneToNodeKubeletIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref NodeGroupSecurityGroup
+      IpProtocol: tcp
+      FromPort: 10250
+      ToPort: 10250
+      SourceSecurityGroupId: !Ref EKSClusterSecurityGroup
+
+  # Ray Dashboard — port 8265, open for monitoring
+  RayDashboardIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref NodeGroupSecurityGroup
+      IpProtocol: tcp
+      FromPort: 8265
+      ToPort: 8265
+      CidrIp: 0.0.0.0/0
+
+  NodeEgressRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref NodeGroupSecurityGroup
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  # ==========================================================================
+  # S3 BUCKET  (identical to ECS version)
+  # ==========================================================================
+
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${S3BucketName}-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteExtractedAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: extracted/
+          - Id: DeleteChunksAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: chunks/
+          - Id: DeleteEnrichedAfter30Days
+            Status: Enabled
+            ExpirationInDays: 30
+            Prefix: enriched/
+          - Id: DeleteEmbeddingsAfter90Days
+            Status: Enabled
+            ExpirationInDays: 90
+            Prefix: embeddings/
+          - Id: DeleteInputAfter180Days
+            Status: Enabled
+            ExpirationInDays: 180
+            Prefix: input/
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  DocumentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowPodIRSAAccess
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt RayPodRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+            Resource:
+              - !Sub '${DocumentBucket.Arn}/*'
+              - !GetAtt DocumentBucket.Arn
+
+  # ==========================================================================
+  # DYNAMODB TABLES  (identical to ECS version)
+  # ==========================================================================
+
+  ControlTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-control'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: processing_version
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: updated_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+        - AttributeName: processing_version
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: status-updated-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: updated_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-audit'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  MetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${AWS::StackName}-metrics'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: date
+          AttributeType: S
+        - AttributeName: metric_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: date
+          KeyType: HASH
+        - AttributeName: metric_type
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ==========================================================================
+  # SNS ALERTS  (identical to ECS version)
+  # ==========================================================================
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-alerts'
+      DisplayName: Ray Pipeline Alerts
+      Subscription:
+        - Endpoint: !Ref AlertEmail
+          Protocol: email
+
+  # ==========================================================================
+  # LAMBDA — S3 EVENT HANDLER  (identical to ECS version)
+  # Writes PENDING records to DynamoDB when PDFs land in input/.
+  # KubeRay orchestrator polls DynamoDB the same way ECS did.
+  # ==========================================================================
+
+  S3EventLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-s3-handler'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt ControlTable.Arn
+                  - !GetAtt AuditTable.Arn
+                  - !GetAtt MetricsTable.Arn
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub '${DocumentBucket.Arn}/*'
+
+  S3EventLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-s3-event-handler'
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt S3EventLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          CONTROL_TABLE_NAME: !Ref ControlTable
+          AUDIT_TABLE_NAME: !Ref AuditTable
+          METRICS_TABLE_NAME: !Ref MetricsTable
+          PROCESSING_VERSION: 'v1'
+      Code:
+        ZipFile: |
+          import json, boto3, hashlib, os
+          from botocore.exceptions import ClientError
+          from datetime import datetime, timedelta
+          from urllib.parse import unquote_plus
+
+          dynamodb = boto3.resource('dynamodb')
+          control_table = dynamodb.Table(os.environ['CONTROL_TABLE_NAME'])
+          audit_table   = dynamodb.Table(os.environ['AUDIT_TABLE_NAME'])
+
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+              for record in event['Records']:
+                  if record['eventSource'] != 'aws:s3':
+                      continue
+                  bucket = record['s3']['bucket']['name']
+                  key    = unquote_plus(record['s3']['object']['key'])
+                  if not key.startswith('input/') or not key.lower().endswith('.pdf'):
+                      print(f"Skipping {key}")
+                      continue
+                  key_hash  = hashlib.md5(key.encode()).hexdigest()[:8]
+                  filename  = key.split('/')[-1].replace('.pdf', '')
+                  doc_id    = f"doc_{filename}_{key_hash}"
+                  timestamp = datetime.utcnow()
+                  ttl       = int((timestamp + timedelta(days=90)).timestamp())
+                  try:
+                      control_table.put_item(
+                          Item={
+                              'document_id'        : doc_id,
+                              'processing_version' : os.environ['PROCESSING_VERSION'],
+                              'status'             : 'PENDING',
+                              'created_at'         : timestamp.isoformat() + 'Z',
+                              'updated_at'         : timestamp.isoformat() + 'Z',
+                              's3_bucket'          : bucket,
+                              's3_key'             : key,
+                              'current_stage'      : 'QUEUED',
+                              'retry_count'        : 0,
+                              'ttl'                : ttl
+                          },
+                          ConditionExpression='attribute_not_exists(document_id)'
+                      )
+                      print(f"✓ Control record: {doc_id}")
+                  except ClientError as e:
+                      if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+                          print(f"⚠ {doc_id} already queued — skipping duplicate")
+                          continue
+                      raise
+                  audit_table.put_item(Item={
+                      'document_id' : doc_id,
+                      'timestamp'   : timestamp.isoformat() + 'Z',
+                      'event_type'  : 'DOCUMENT_RECEIVED',
+                      'status'      : 'PENDING',
+                      'message'     : f'Uploaded to s3://{bucket}/{key}',
+                      'metadata'    : {'bucket': bucket, 'key': key},
+                      'ttl'         : int((timestamp + timedelta(days=180)).timestamp())
+                  })
+              return {'statusCode': 200, 'body': 'OK'}
+
+  S3EventLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${S3EventLambda}'
+      RetentionInDays: 7
+
+  S3TriggerLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref S3EventLambda
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt DocumentBucket.Arn
+      SourceAccount: !Ref AWS::AccountId
+
+  # S3 notification custom resource (same circular-dependency workaround as ECS version)
+  S3NotificationCustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-s3-notification-cr-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3NotificationAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutBucketNotification
+                  - s3:GetBucketNotification
+                Resource: !GetAtt DocumentBucket.Arn
+
+  S3NotificationCustomResourceFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-s3-notification-cr'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt S3NotificationCustomResourceRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3, cfnresponse, json
+          s3 = boto3.client('s3')
+          def handler(event, context):
+              bucket     = event['ResourceProperties']['BucketName']
+              lambda_arn = event['ResourceProperties']['LambdaArn']
+              try:
+                  if event['RequestType'] in ('Create', 'Update'):
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket,
+                          NotificationConfiguration={
+                              'LambdaFunctionConfigurations': [{
+                                  'LambdaFunctionArn': lambda_arn,
+                                  'Events': ['s3:ObjectCreated:*'],
+                                  'Filter': {'Key': {'FilterRules': [
+                                      {'Name': 'prefix', 'Value': 'input/'},
+                                      {'Name': 'suffix', 'Value': '.pdf'}
+                                  ]}}
+                              }]
+                          }
+                      )
+                  elif event['RequestType'] == 'Delete':
+                      s3.put_bucket_notification_configuration(
+                          Bucket=bucket, NotificationConfiguration={})
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  S3BucketNotificationCustomResource:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: S3TriggerLambdaPermission
+    Properties:
+      ServiceToken: !GetAtt S3NotificationCustomResourceFunction.Arn
+      BucketName: !Ref DocumentBucket
+      LambdaArn: !GetAtt S3EventLambda.Arn
+
+  # ==========================================================================
+  # IAM — EKS CONTROL PLANE ROLE
+  # Required by EKS to manage AWS resources on behalf of the cluster.
+  # ==========================================================================
+
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-eks-cluster-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+  # ==========================================================================
+  # IAM — NODE GROUP ROLE
+  # EC2 instances in the node group assume this role.
+  # Allows pulling images from ECR, joining the cluster, writing logs.
+  # ==========================================================================
+
+  NodeGroupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-node-group-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+  # ==========================================================================
+  # IAM — IRSA (IAM Roles for Service Accounts)
+  # --------------------------------------------------------------------------
+  # IRSA replaces ECS Task Role. How it works:
+  #
+  #   1. EKS creates an OIDC endpoint for the cluster (like a mini identity provider).
+  #   2. We create an IAM role with a trust policy that says:
+  #      "Trust JWT tokens issued by THIS cluster's OIDC endpoint,
+  #       IF the token's sub claim is for service account ray-pipeline/ray-pod-sa"
+  #   3. The pod's ServiceAccount has annotation eks.amazonaws.com/role-arn.
+  #   4. EKS injects AWS_WEB_IDENTITY_TOKEN_FILE + AWS_ROLE_ARN into the pod.
+  #   5. boto3 auto-discovers these env vars and assumes the role transparently.
+  #
+  # Result: pods get temporary, scoped AWS credentials — exactly like ECS Task Roles.
+  # Your Python code (boto3.resource('s3')) works with zero changes.
+  #
+  # NOTE: The OIDCProviderArn parameter is filled by deploy.sh after the cluster
+  # is created (you can't reference it in the same CFN stack as the cluster).
+  # ==========================================================================
+
+  # OIDC provider is created via OIDCProviderResource custom resource below.
+
+  OIDCProviderCustomResourceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-oidc-cr-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EKSDescribeAndOIDC
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                  - iam:CreateOpenIDConnectProvider
+                  - iam:DeleteOpenIDConnectProvider
+                  - iam:GetOpenIDConnectProvider
+                Resource: '*'
+
+  OIDCProviderCustomResourceFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: EKSCluster
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-oidc-provider-cr'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt OIDCProviderCustomResourceRole.Arn
+      Timeout: 120
+      Code:
+        ZipFile: |
+          import boto3, cfnresponse, hashlib, urllib.request, json
+
+          eks = boto3.client('eks')
+          iam = boto3.client('iam')
+
+          def get_thumbprint(url):
+              # Fetch TLS certificate thumbprint for OIDC provider trust
+              import ssl, socket
+              from urllib.parse import urlparse
+              parsed = urlparse(url)
+              host   = parsed.netloc
+              ctx    = ssl.create_default_context()
+              conn   = ctx.wrap_socket(socket.socket(), server_hostname=host)
+              conn.settimeout(5)
+              conn.connect((host, 443))
+              cert_der = conn.getpeercert(binary_form=True)
+              conn.close()
+              return hashlib.sha1(cert_der).hexdigest()
+
+          def handler(event, context):
+              cluster_name = event['ResourceProperties']['ClusterName']
+              try:
+                  if event['RequestType'] in ('Create', 'Update'):
+                      cluster = eks.describe_cluster(name=cluster_name)['cluster']
+                      issuer  = cluster['identity']['oidc']['issuer']
+                      thumb   = get_thumbprint(issuer)
+                      resp = iam.create_open_id_connect_provider(
+                          Url=issuer,
+                          ClientIDList=['sts.amazonaws.com'],
+                          ThumbprintList=[thumb]
+                      )
+                      provider_arn = resp['OpenIDConnectProviderArn']
+                      # Extract just the ID portion (after oidc-provider/)
+                      issuer_id = issuer.replace('https://', '')
+                      print(f"Created OIDC provider: {provider_arn}")
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS,
+                          {'ProviderArn': provider_arn, 'IssuerId': issuer_id},
+                          physicalResourceId=provider_arn)
+
+                  elif event['RequestType'] == 'Delete':
+                      provider_arn = event.get('PhysicalResourceId', '')
+                      if provider_arn and 'oidc-provider' in provider_arn:
+                          try:
+                              iam.delete_open_id_connect_provider(
+                                  OpenIDConnectProviderArn=provider_arn)
+                          except iam.exceptions.NoSuchEntityException:
+                              pass
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+              except Exception as e:
+                  print(f"ERROR: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+
+  OIDCProviderResource:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: EKSCluster
+    Properties:
+      ServiceToken: !GetAtt OIDCProviderCustomResourceFunction.Arn
+      ClusterName: !Sub '${AWS::StackName}-eks'
+
+  # IAM role that Ray pods assume via IRSA
+  # Trust policy references the OIDC provider created above.
+  RayPodRole:
+    Type: AWS::IAM::Role
+    DependsOn: OIDCProviderResource
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ray-pod-role'
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Principal": { "Federated": "${OIDCProviderArn}" },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringLike": {
+                  "oidc.eks.${AWS::Region}.amazonaws.com/id/*:sub": "system:serviceaccount:ray-pipeline:ray-pod-sa",
+                  "oidc.eks.${AWS::Region}.amazonaws.com/id/*:aud": "sts.amazonaws.com"
+                }
+              }
+            }]
+          }
+        - OIDCProviderArn: !GetAtt OIDCProviderResource.ProviderArn
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${DocumentBucket.Arn}/*'
+                  - !GetAtt DocumentBucket.Arn
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !GetAtt ControlTable.Arn
+                  - !Sub '${ControlTable.Arn}/index/*'
+                  - !GetAtt AuditTable.Arn
+                  - !GetAtt MetricsTable.Arn
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref OpenAISecretArn
+                  - !Ref PineconeSecretArn
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ray/${AWS::StackName}*'
+
+  # ==========================================================================
+  # EKS CLUSTER
+  # ==========================================================================
+
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub '${AWS::StackName}-eks'
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      ResourcesVpcConfig:
+        SubnetIds:
+          - !Ref PublicSubnet1
+          - !Ref PublicSubnet2
+        SecurityGroupIds:
+          - !Ref EKSClusterSecurityGroup
+        EndpointPublicAccess: true
+        EndpointPrivateAccess: false
+      Logging:
+        ClusterLogging:
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ==========================================================================
+  # MANAGED NODE GROUP
+  # --------------------------------------------------------------------------
+  # EC2 instances that run your Ray pods.
+  #
+  # m5.4xlarge = 16 vCPU / 64 GB
+  # Kubernetes overhead: ~0.5 CPU / 1 GB
+  # Allocatable per node: ~15.5 CPU / ~62 GB
+  # Each Ray worker requests: 4 CPU / 16 GB
+  # Workers per node: floor(15.5/4) = 3 workers, floor(62/16) = 3 workers → 3/node
+  # For 10 workers: ceil(10/3) = 4 nodes → NodeMaxSize=5 gives headroom
+  # ==========================================================================
+
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EKSCluster
+    Properties:
+      NodegroupName: !Sub '${AWS::StackName}-ray-nodes'
+      ClusterName: !Sub '${AWS::StackName}-eks'
+      NodeRole: !GetAtt NodeGroupRole.Arn
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      InstanceTypes:
+        - !Ref NodeInstanceType
+      ScalingConfig:
+        MinSize: !Ref NodeMinSize
+        MaxSize: !Ref NodeMaxSize
+        DesiredSize: !Ref NodeDesiredSize
+      AmiType: AL2_x86_64
+      DiskSize: 100      # 100 GB root volume — replaces EphemeralStorage hack
+      Labels:
+        role: ray-worker
+        workload: document-pipeline
+      Tags:
+        Environment: !Ref Environment
+        # Required for Cluster Autoscaler to discover and manage this node group.
+        # CFN does not support !Sub as a map key in EKS::Nodegroup Tags,
+        # so the cluster name is hardcoded. Stack name is fixed as "ray-document-pipeline"
+        # in step1_deploy_cloudformation.py, so the cluster name is always deterministic.
+        k8s.io/cluster-autoscaler/ray-document-pipeline-eks: owned
+        k8s.io/cluster-autoscaler/enabled: "true"
+
+  # ==========================================================================
+  # CLOUDWATCH ALARMS  (operational alerts — same as ECS version)
+  # ==========================================================================
+
+  RayHeadDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-ray-head-down'
+      AlarmDescription: Ray head pod has been down for 2+ minutes
+      Namespace: ContainerInsights
+      MetricName: pod_number_of_running_containers
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Sub '${AWS::StackName}-eks'
+        - Name: Namespace
+          Value: ray-pipeline
+        - Name: PodName
+          Value: ray-head
+      TreatMissingData: breaching
+      AlarmActions: !If
+        - HasAlertEmail
+        - [!Ref AlertTopic]
+        - !Ref AWS::NoValue
+
+# ============================================================================
+# OUTPUTS — consumed by deploy.sh and ray-cluster.yaml
+# ============================================================================
+
+Outputs:
+
+  EKSClusterName:
+    Description: EKS cluster name — pass to kubectl and deploy.sh
+    Value: !Sub '${AWS::StackName}-eks'
+    Export:
+      Name: !Sub '${AWS::StackName}-eks-cluster-name'
+
+  EKSClusterEndpoint:
+    Description: EKS API server endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+
+  NodeGroupRoleArn:
+    Description: Node group IAM role ARN
+    Value: !GetAtt NodeGroupRole.Arn
+
+  RayPodRoleArn:
+    Description: >
+      IRSA role ARN — paste this into ray-cluster.yaml and k8s-supporting.yaml
+      under eks.amazonaws.com/role-arn annotation on the ServiceAccount.
+    Value: !GetAtt RayPodRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ray-pod-role-arn'
+
+  S3BucketName:
+    Description: S3 bucket name — set S3_BUCKET env var in ray-cluster.yaml
+    Value: !Ref DocumentBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-s3-bucket'
+
+  ControlTableName:
+    Description: DynamoDB control table — set DYNAMODB_CONTROL_TABLE in ray-cluster.yaml
+    Value: !Ref ControlTable
+    Export:
+      Name: !Sub '${AWS::StackName}-control-table'
+
+  AuditTableName:
+    Description: DynamoDB audit table
+    Value: !Ref AuditTable
+
+  MetricsTableName:
+    Description: DynamoDB metrics table
+    Value: !Ref MetricsTable
+
+  OIDCProviderArn:
+    Description: OIDC provider ARN (for reference)
+    Value: !GetAtt OIDCProviderResource.ProviderArn
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-vpc-id'

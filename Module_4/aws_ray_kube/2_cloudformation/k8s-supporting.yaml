@@ -1,0 +1,155 @@
+# ============================================================================
+# k8s-supporting.yaml
+#
+# Kubernetes supporting resources:
+#   - Namespace
+#   - ServiceAccount (with IRSA annotation — gives pods AWS credentials)
+#   - RBAC (KubeRay autoscaler needs permission to create/delete pods)
+#   - ResourceQuota (prevents runaway scaling from consuming entire cluster)
+#   - PodDisruptionBudget (ensures head node survives node upgrades)
+#
+# Apply: kubectl apply -f k8s-supporting.yaml
+# ============================================================================
+
+---
+# ============================================================================
+# NAMESPACE
+# Isolates all Ray pipeline resources from other workloads.
+# ============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ray-pipeline
+  labels:
+    app: ray-document-pipeline
+    environment: production
+
+---
+# ============================================================================
+# SERVICE ACCOUNT — IRSA
+# --------------------------------------------------------------------------
+# This ServiceAccount is annotated with the IAM role ARN created by
+# CloudFormation (eks-cluster.yaml → RayPodRole output).
+#
+# When a pod uses this ServiceAccount, EKS automatically injects:
+#   AWS_WEB_IDENTITY_TOKEN_FILE=/var/run/secrets/eks.amazonaws.com/serviceaccount/token
+#   AWS_ROLE_ARN=arn:aws:iam::<account>:role/ray-document-pipeline-ray-pod-role
+#
+# boto3 detects these env vars and calls sts:AssumeRoleWithWebIdentity
+# transparently — your Python code works with zero changes.
+#
+# IMPORTANT: Replace <RAY_POD_ROLE_ARN> with the output from CloudFormation:
+#   aws cloudformation describe-stacks \
+#     --stack-name ray-document-pipeline \
+#     --query 'Stacks[0].Outputs[?OutputKey==`RayPodRoleArn`].OutputValue' \
+#     --output text
+# deploy.sh fills this automatically.
+# ============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ray-pod-sa
+  namespace: ray-pipeline
+  labels:
+    app: ray-document-pipeline
+  annotations:
+    # IRSA magic annotation — filled by deploy.sh from CFN output RayPodRoleArn
+    eks.amazonaws.com/role-arn: "<RAY_POD_ROLE_ARN>"
+    # Use regional STS endpoint (faster, more reliable than global)
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+
+---
+# ============================================================================
+# CLUSTER ROLE — KubeRay Autoscaler
+# --------------------------------------------------------------------------
+# The KubeRay autoscaler sidecar (runs in the head pod) needs permission to
+# create, update, and delete worker pods when scaling in/out.
+# This is the minimal set of permissions it requires.
+# ============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ray-autoscaler-role
+  labels:
+    app: ray-document-pipeline
+rules:
+  # Pod management — create workers on scale-out, delete on scale-in
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+  # Pod status reading (autoscaler monitors pod health)
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["get", "patch", "update"]
+  # Events — autoscaler logs scaling decisions as K8s events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Node info — used to calculate available resources for scheduling decisions
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # RayCluster CRD — autoscaler reads/updates the RayCluster spec
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters", "rayclusters/status", "rayclusters/finalizers"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ray-autoscaler-binding
+  labels:
+    app: ray-document-pipeline
+subjects:
+  - kind: ServiceAccount
+    name: ray-pod-sa
+    namespace: ray-pipeline
+roleRef:
+  kind: ClusterRole
+  name: ray-autoscaler-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ============================================================================
+# RESOURCE QUOTA
+# --------------------------------------------------------------------------
+# Hard ceiling on resources in the ray-pipeline namespace.
+# Prevents a runaway autoscaler from consuming the entire cluster.
+# 10 workers × 4 CPU = 40 CPU, + 2 CPU head = 42 CPU total.
+# 10 workers × 16 GB = 160 GB, + 8 GB head = 168 GB total.
+# Set limits slightly above to allow headroom.
+# ============================================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ray-pipeline-quota
+  namespace: ray-pipeline
+spec:
+  hard:
+    requests.cpu: "50"
+    requests.memory: 200Gi
+    limits.cpu: "50"
+    limits.memory: 200Gi
+    pods: "20"                  # Head + 10 workers + KubeRay operator pods
+
+---
+# ============================================================================
+# POD DISRUPTION BUDGET — Head Node
+# --------------------------------------------------------------------------
+# Ensures the Ray head pod is NOT evicted during node drain operations
+# (e.g., cluster upgrades, spot interruptions on the head's node).
+# minAvailable: 1 means K8s will wait for the new head to be scheduled before
+# evicting the existing one — prevents the orchestrator going down mid-pipeline.
+# ============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ray-head-pdb
+  namespace: ray-pipeline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      ray.io/node-type: head
+      ray.io/cluster: ray-document-pipeline

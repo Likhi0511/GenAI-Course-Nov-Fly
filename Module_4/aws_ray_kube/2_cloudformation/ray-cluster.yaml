@@ -1,0 +1,455 @@
+# ============================================================================
+# ray-cluster.yaml
+#
+# KubeRay RayCluster — replaces ALL of this from the ECS version:
+#   ✗ RayHeadTaskDefinition
+#   ✗ RayWorkerTaskDefinition
+#   ✗ RayHeadService
+#   ✗ RayWorkerService
+#   ✗ ServiceDiscoveryNamespace + RayHeadServiceDiscovery
+#   ✗ QueueMetricPublisherFunction + Lambda + EventBridge (whole block)
+#   ✗ WorkerScalingTarget + WorkerScaleOutPolicy + WorkerScaleInPolicy
+#   ✗ WorkerScaleOutAlarm + WorkerScaleInAlarm
+#   ✗ ECSClusterCapacityProviders
+#
+# KubeRay autoscaler talks directly to the Ray scheduler —
+# it knows the exact number of pending tasks and scales workers accordingly.
+# No Lambda polling DynamoDB, no CloudWatch custom metrics, no Step Scaling.
+#
+# BEFORE APPLYING:
+#   Replace all <PLACEHOLDER> values using deploy.sh (it fills them automatically)
+#   or manually from CloudFormation outputs.
+#
+# Apply: kubectl apply -f ray-cluster.yaml -n ray-pipeline
+# ============================================================================
+
+apiVersion: ray.io/v1
+kind: RayCluster
+
+metadata:
+  name: ray-document-pipeline
+  namespace: ray-pipeline
+  labels:
+    app: ray-document-pipeline
+    environment: production
+
+spec:
+
+  # ==========================================================================
+  # RAY VERSION
+  # Must match the Ray version installed in your Docker image.
+  # Check with: ray --version (inside your container)
+  # ==========================================================================
+  rayVersion: '2.53.0'
+
+  # ==========================================================================
+  # AUTOSCALING
+  # --------------------------------------------------------------------------
+  # KubeRay autoscaler monitors the Ray scheduler directly.
+  # When tasks are queued with no available worker, it scales UP within seconds.
+  # When workers are idle for idleTimeoutSeconds, it scales DOWN.
+  #
+  # This replaces the entire Lambda → CloudWatch → Step Scaling chain from ECS.
+  # ==========================================================================
+  enableInTreeAutoscaling: true
+
+  autoscalerOptions:
+    upscalingMode: Default          # Scale up as soon as tasks are queued
+    idleTimeoutSeconds: 300         # Scale down after 5 min idle (same as ECS scale-in cooldown)
+    imagePullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: "500m"
+        memory: 512Mi
+      requests:
+        cpu: "200m"
+        memory: 256Mi
+
+  # ==========================================================================
+  # HEAD NODE
+  # --------------------------------------------------------------------------
+  # Runs: Ray GCS server, Dashboard, Orchestrator (ray_orchestrator.py)
+  # Does NOT run tasks (num-cpus=0 prevents the scheduler assigning work here)
+  # Resource requests: 2 CPU / 8 GB — same as ECS RayHeadCPU/RayHeadMemory
+  # ==========================================================================
+  headGroupSpec:
+
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+      dashboard-port: '8265'
+      num-cpus: '0'                       # Head node runs orchestrator only, no Ray tasks
+      object-store-memory: '1000000000'   # 1 GB plasma store
+      disable-usage-stats: 'true'
+
+    # Service that exposes the head node within the cluster
+    # Workers connect to ray-document-pipeline-head-svc:6379 automatically (KubeRay wires this)
+    serviceType: ClusterIP
+
+    template:
+      metadata:
+        labels:
+          app: ray-head
+          component: ray-pipeline
+
+        annotations:
+          # Prometheus scraping (optional — Ray exposes metrics on :8080)
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "8080"
+
+      spec:
+        # ServiceAccount with IRSA annotation — gives pods AWS credentials
+        # Same permissions as ECS Task Role (S3 + DynamoDB + Secrets Manager)
+        serviceAccountName: ray-pod-sa
+
+        containers:
+          - name: ray-head
+            image: 107282186797.dkr.ecr.us-east-1.amazonaws.com/ray-document-pipeline-ray:latest      # Filled by deploy.sh
+            imagePullPolicy: Always
+
+            # ----------------------------------------------------------------
+            # Head startup: launch Ray head, wait for ready, start orchestrator
+            # Identical logic to ECS Command — same shell script, same flags
+            # ----------------------------------------------------------------
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                set -e
+                echo "=========================================="
+                echo "RAY HEAD NODE STARTUP (EKS/KubeRay)"
+                echo "=========================================="
+
+                # KubeRay injects RAY_IP and RAY_PORT — no need to pass --port manually
+                ray start --head \
+                      --port=6379 \
+                      --dashboard-host=0.0.0.0 \
+                      --dashboard-port=8265 \
+                      --num-cpus=0 \
+                      --object-store-memory=1000000000 \
+                      --plasma-directory=/tmp \
+                      --include-dashboard=true \
+                      --disable-usage-stats &
+                RAY_PID=$!
+
+                echo "Waiting for Ray to initialise..."
+                until ray status 2>/dev/null; do sleep 2; done
+
+                echo "=========================================="
+                echo "RAY HEAD READY — starting orchestrator"
+                echo "=========================================="
+                ray status
+                sleep 5
+
+                cd /app
+
+                # ── Orchestrator supervisor loop ──────────────────────────
+                # If ray_orchestrator.py exits for any reason (exception, OOM,
+                # unexpected error), restart it with exponential backoff.
+                # After 3 rapid restarts (< 60s each), give up and crash the
+                # container — Kubernetes will restart the whole pod cleanly.
+                RESTART_COUNT=0
+                MAX_RESTARTS=3
+                while true; do
+                    START_TS=$(date +%s)
+                    echo "[supervisor] Starting ray_orchestrator.py (attempt $((RESTART_COUNT+1)))"
+
+                    python ray_orchestrator.py
+                    EXIT_CODE=$?
+                    END_TS=$(date +%s)
+                    UPTIME=$((END_TS - START_TS))
+
+                    echo "[supervisor] ray_orchestrator.py exited (code=$EXIT_CODE uptime=${UPTIME}s)"
+
+                    if [ $UPTIME -gt 60 ]; then
+                        # Ran for more than 60s — treat as a healthy run, reset counter
+                        RESTART_COUNT=0
+                    else
+                        RESTART_COUNT=$((RESTART_COUNT + 1))
+                    fi
+
+                    if [ $RESTART_COUNT -ge $MAX_RESTARTS ]; then
+                        echo "[supervisor] ✗ Orchestrator crashed $MAX_RESTARTS times rapidly — killing container"
+                        echo "[supervisor]   Kubernetes will restart the pod. Check logs for root cause."
+                        ray stop
+                        exit 1   # Non-zero exit → K8s marks pod Failed → restarts it
+                    fi
+
+                    BACKOFF=$((RESTART_COUNT * 10))
+                    echo "[supervisor] Restarting in ${BACKOFF}s..."
+                    sleep $BACKOFF
+                done
+
+                ray stop
+                wait $RAY_PID
+
+            ports:
+              - containerPort: 6379   # GCS server (Redis)
+                name: gcs
+              - containerPort: 8265   # Dashboard
+                name: dashboard
+              - containerPort: 10001  # Object Manager
+                name: object-manager
+              - containerPort: 8080   # Metrics (Prometheus)
+                name: metrics
+
+            resources:
+              requests:
+                cpu: "2"
+                memory: "8Gi"
+              limits:
+                cpu: "2"
+                memory: "8Gi"
+
+            env:
+              # ── AWS / Pipeline configuration ────────────────────────────
+              # These mirror the ECS task definition Environment block exactly.
+              # Values are filled by deploy.sh from CloudFormation outputs.
+              - name: AWS_REGION
+                value: "us-east-1"                    # Filled by deploy.sh
+              - name: S3_BUCKET
+                value: "<S3_BUCKET>"                     # Filled by deploy.sh
+              - name: DYNAMODB_CONTROL_TABLE
+                value: "<CONTROL_TABLE>"                 # Filled by deploy.sh
+              - name: DYNAMODB_AUDIT_TABLE
+                value: "<AUDIT_TABLE>"                   # Filled by deploy.sh
+              - name: DYNAMODB_METRICS_TABLE
+                value: "<METRICS_TABLE>"                 # Filled by deploy.sh
+              - name: PINECONE_INDEX_NAME
+                value: "clinical-trials-index"
+              - name: PINECONE_NAMESPACE
+                value: "clinical-trials"
+              - name: LOG_LEVEL
+                value: "INFO"
+              - name: PYTHONUNBUFFERED
+                value: "1"
+              - name: RAY_ADDRESS
+                value: "auto"                            # Head connects to local cluster
+              - name: RAY_NAMESPACE
+                value: "document-pipeline"
+              - name: MAX_DOCUMENTS_PER_POLL
+                value: "20"                              # Process all 20 docs in one batch
+              - name: POLLING_INTERVAL
+                value: "30"                              # Seconds between DynamoDB polls
+              - name: PROCESSING_VERSION
+                value: "v1"                              # Must match Lambda PROCESSING_VERSION
+
+              # ── Secrets from Kubernetes Secrets (populated by deploy.sh) ─
+              # These mirror the ECS Secrets block.
+              # deploy.sh pulls values from AWS Secrets Manager and creates K8s Secrets.
+              - name: OPENAI_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: ray-pipeline-secrets
+                    key: openai-api-key
+              - name: PINECONE_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: ray-pipeline-secrets
+                    key: pinecone-api-key
+
+            # ----------------------------------------------------------------
+            # /tmp storage — replaces ECS EphemeralStorage: SizeInGiB: 50
+            # emptyDir is backed by the node's disk (100 GB root volume)
+            # ----------------------------------------------------------------
+            volumeMounts:
+              - name: tmp-storage
+                mountPath: /tmp
+
+            # Health check — same as ECS HealthCheck
+            livenessProbe:
+              exec:
+                command: ["ray", "status"]
+              initialDelaySeconds: 120
+              periodSeconds: 30
+              timeoutSeconds: 5
+              failureThreshold: 3
+
+            readinessProbe:
+              exec:
+                command: ["ray", "status"]
+              initialDelaySeconds: 60
+              periodSeconds: 15
+              timeoutSeconds: 5
+              failureThreshold: 3
+
+        volumes:
+          - name: tmp-storage
+            emptyDir:
+              sizeLimit: 50Gi   # Head: 50 GB — same as ECS EphemeralStorage
+
+        # Prefer scheduling head on a dedicated node if possible
+        affinity:
+          nodeAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                preference:
+                  matchExpressions:
+                    - key: role
+                      operator: In
+                      values: [ray-worker]
+
+  # ==========================================================================
+  # WORKER NODES
+  # --------------------------------------------------------------------------
+  # KubeRay scales replicas between minReplicas and maxReplicas automatically.
+  # Resource per worker: 4 CPU / 16 GB — same as ECS RayWorkerCPU/RayWorkerMemory.
+  # 3 workers fit per m5.4xlarge node (16 vCPU / 64 GB).
+  # ==========================================================================
+  workerGroupSpecs:
+    - groupName: ray-workers
+      replicas: 1               # Initial count (KubeRay autoscaler adjusts from here)
+      minReplicas: 1            # Always keep 1 warm (matches ECS MinWorkers)
+      maxReplicas: 10           # Maximum scale-out (matches ECS MaxWorkers)
+
+      rayStartParams:
+        num-cpus: "4"                       # Matches ECS RayWorkerCPU=2048 (2 vCPU) → bumped to 4
+        object-store-memory: '1000000000'   # 1 GB plasma store per worker
+        disable-usage-stats: 'true'
+
+      template:
+        metadata:
+          labels:
+            app: ray-worker
+            component: ray-pipeline
+
+        spec:
+          serviceAccountName: ray-pod-sa
+
+          containers:
+            - name: ray-worker
+              image: 107282186797.dkr.ecr.us-east-1.amazonaws.com/ray-document-pipeline-ray:latest        # Filled by deploy.sh
+              imagePullPolicy: Always
+
+              # ---------------------------------------------------------------
+              # Worker startup — wait for head, then join cluster
+              # Replaces ECS worker Command block. ray start --block keeps the
+              # container alive (same as --block in ECS worker command).
+              # ---------------------------------------------------------------
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -e
+                  echo "=========================================="
+                  echo "RAY WORKER NODE STARTUP (EKS/KubeRay)"
+                  echo "=========================================="
+
+                  # KubeRay injects FQ_RAY_IP pointing to the head service
+                  echo "Waiting for Ray head at ${FQ_RAY_IP}:6379..."
+                  until ray health-check --address=${FQ_RAY_IP}:6379 2>/dev/null; do
+                    sleep 5
+                  done
+
+                  echo "Joining Ray cluster at ${FQ_RAY_IP}:6379"
+                  ray start \
+                    --address=${FQ_RAY_IP}:6379 \
+                    --object-store-memory=1000000000 \
+                    --plasma-directory=/tmp \
+                    --disable-usage-stats \
+                    --block
+
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: "16Gi"
+                limits:
+                  cpu: "4"
+                  memory: "16Gi"
+
+              env:
+                # Same env vars as ECS worker task definition
+                - name: AWS_REGION
+                  value: "us-east-1"
+                - name: S3_BUCKET
+                  value: "<S3_BUCKET>"
+                - name: DYNAMODB_CONTROL_TABLE
+                  value: "<CONTROL_TABLE>"
+                - name: DYNAMODB_AUDIT_TABLE
+                  value: "<AUDIT_TABLE>"
+                - name: DYNAMODB_METRICS_TABLE
+                  value: "<METRICS_TABLE>"
+                - name: PINECONE_INDEX_NAME
+                  value: "clinical-trials-index"
+                - name: PINECONE_NAMESPACE
+                  value: "clinical-trials"
+                - name: LOG_LEVEL
+                  value: "INFO"
+                - name: PYTHONUNBUFFERED
+                  value: "1"
+                # Workers need RAY_ADDRESS to connect back to the head
+                # KubeRay injects FQ_RAY_IP but config.py reads RAY_ADDRESS
+                - name: RAY_ADDRESS
+                  value: "auto"                          # Workers use Ray's auto-discovery
+                - name: RAY_NAMESPACE
+                  value: "document-pipeline"
+                - name: POLLING_INTERVAL
+                  value: "30"
+                - name: MAX_DOCUMENTS_PER_POLL
+                  value: "20"
+                - name: PROCESSING_VERSION
+                  value: "v1"
+                - name: OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ray-pipeline-secrets
+                      key: openai-api-key
+                - name: PINECONE_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: ray-pipeline-secrets
+                      key: pinecone-api-key
+
+              volumeMounts:
+                - name: tmp-storage
+                  mountPath: /tmp
+
+              # Workers don't need a readiness probe — KubeRay tracks them via Ray's cluster state
+              livenessProbe:
+                exec:
+                  command: ["ray", "status"]
+                initialDelaySeconds: 120
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
+
+          volumes:
+            - name: tmp-storage
+              emptyDir:
+                sizeLimit: 100Gi    # Worker: 100 GB — same as ECS EphemeralStorage
+
+          # Schedule workers on nodes labelled role=ray-worker
+          nodeSelector:
+            role: ray-worker
+
+          # Tolerate spot instance interruption taint (if using Karpenter spot nodes)
+          tolerations:
+            - key: "spot"
+              operator: "Equal"
+              value: "true"
+              effect: "NoSchedule"
+
+---
+# ============================================================================
+# Ray Head Service
+# --------------------------------------------------------------------------
+# Exposes the Ray Dashboard externally via LoadBalancer.
+# Workers connect internally via KubeRay's auto-generated ClusterIP service.
+# This replaces ECS RayDashboardIngressRule + Service Discovery.
+# ============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-dashboard
+  namespace: ray-pipeline
+  labels:
+    app: ray-head
+spec:
+  type: ClusterIP      # Use kubectl port-forward to access (free vs ~$20/month for LoadBalancer)
+                       # Access: kubectl port-forward svc/ray-dashboard 8265:8265 -n ray-pipeline
+                       # Then open: http://localhost:8265
+  selector:
+    ray.io/node-type: head
+    ray.io/cluster: ray-document-pipeline
+  ports:
+    - name: dashboard
+      port: 8265
+      targetPort: 8265
+      protocol: TCP
