@@ -16,7 +16,7 @@ import sys
 import boto3
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # Configuration
@@ -40,7 +40,7 @@ def upload_template_to_s3(account_id: str) -> str:
     # Reuse the pipeline bucket (already exists after first deploy)
     # On first deploy it won't exist yet, so we create a staging bucket
     staging_bucket = f"cfn-templates-{account_id}-{REGION}"
-    key = f"{STACK_NAME}/{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.yaml"
+    key = f"{STACK_NAME}/{datetime.now(tz=timezone.utc).strftime('%Y%m%d%H%M%S')}.yaml"
 
     s3 = boto3.client("s3", region_name=REGION)
 

@@ -130,6 +130,8 @@ logger = logging.getLogger(__name__)
 @ray.remote(
     num_cpus=config.EXTRACTION_NUM_CPUS,
     memory=config.EXTRACTION_MEMORY_MB * 1024 * 1024,  # Ray expects bytes; config stores MB
+    max_retries=2,        # Retry up to 2x on worker crash (OOM, SIGKILL). Default is 3.
+    retry_exceptions=True # Retry on any exception, not just system errors.
 )
 def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
     """
@@ -219,9 +221,14 @@ def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
         # ------------------------------------------------------------------
         duration     = time.time() - start_time
         pages        = metadata.get("pages", [])
-        # Count images and tables across all pages — each image = 1 GPT-4o call (~$0.01)
-        total_images = sum(len(p.get("images", [])) for p in pages)
-        total_tables = sum(len(p.get("tables", [])) for p in pages)
+        # FIX: metadata_pages stores images/tables as integer counts, not lists.
+        # len() on an int raises "object of type 'int' has no len()".
+        try:
+            total_images = sum(int(p.get("images", 0)) for p in pages)
+            total_tables = sum(int(p.get("tables", 0)) for p in pages)
+        except (TypeError, ValueError):
+            total_images = int(metadata.get("total_images", 0))
+            total_tables = int(metadata.get("total_tables", 0))
 
         result = {
             "status"          : "COMPLETED",
@@ -279,6 +286,8 @@ def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
 @ray.remote(
     num_cpus=config.CHUNKING_NUM_CPUS,
     memory=config.CHUNKING_MEMORY_MB * 1024 * 1024,
+    max_retries=1,
+    retry_exceptions=True
 )
 def chunk_document(document_id: str, extracted_s3_prefix: str) -> Dict:
     """
@@ -450,6 +459,8 @@ def chunk_document(document_id: str, extracted_s3_prefix: str) -> Dict:
 @ray.remote(
     num_cpus=config.ENRICHMENT_NUM_CPUS,
     memory=config.ENRICHMENT_MEMORY_MB * 1024 * 1024,
+    max_retries=1,
+    retry_exceptions=True
 )
 def enrich_chunks(document_id: str, chunks_s3_key: str) -> Dict:
     """
@@ -601,6 +612,8 @@ def enrich_chunks(document_id: str, chunks_s3_key: str) -> Dict:
 @ray.remote(
     num_cpus=config.EMBEDDING_NUM_CPUS,
     memory=config.EMBEDDING_MEMORY_MB * 1024 * 1024,
+    max_retries=1,
+    retry_exceptions=True
 )
 def generate_embeddings_task(document_id: str, enriched_s3_key: str) -> Dict:
     """
@@ -757,6 +770,8 @@ def generate_embeddings_task(document_id: str, enriched_s3_key: str) -> Dict:
 @ray.remote(
     num_cpus=config.LOADING_NUM_CPUS,
     memory=config.LOADING_MEMORY_MB * 1024 * 1024,
+    max_retries=1,
+    retry_exceptions=True
 )
 def load_vectors(document_id: str, embeddings_s3_key: str) -> Dict:
     """

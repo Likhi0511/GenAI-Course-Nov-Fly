@@ -1,5 +1,39 @@
 import os
+import json as _json
 from typing import Optional
+
+
+def _parse_secret(env_var: str, *json_keys: str) -> str:
+    """
+    Read an env var injected by ECS Secrets Manager. Handles two formats:
+
+    Format A — plain string (correct way to store secrets):
+        Secret value:  sk-abc123...
+        Result:        sk-abc123...
+
+    Format B — JSON object (common mistake, causes 401 errors):
+        Secret value:  {"OPENAI_API_KEY": "sk-abc123..."}
+        Result:        sk-abc123...   (extracted automatically)
+
+    json_keys: candidate keys to try when the value is JSON.
+               Falls back to env_var name, then common aliases.
+    """
+    raw = os.getenv(env_var, "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("{"):
+        try:
+            parsed = _json.loads(raw)
+            # Try caller-supplied keys first, then the env var name, then aliases
+            candidates = list(json_keys) + [env_var, "api_key", "value", "secret", "key"]
+            for k in candidates:
+                if k in parsed:
+                    return str(parsed[k])
+            # Last resort: first value in the dict
+            return str(next(iter(parsed.values()), ""))
+        except (_json.JSONDecodeError, StopIteration, TypeError):
+            pass  # Not valid JSON — use raw string as-is
+    return raw
 
 
 class PipelineConfig:
@@ -36,8 +70,12 @@ class PipelineConfig:
     # in ray_tasks.py.
 
     # Stage 1: Extraction
+    # IMPORTANT: Docling loads a ~2GB transformer layout model plus the PDF content.
+    # Peak real usage is 6-8GB per extraction task. Setting this too low (e.g. 2048)
+    # causes Ray to schedule multiple extractions on the same worker simultaneously,
+    # which triggers OOM kills. Set to 8192 so Ray only runs ONE extraction per worker.
     EXTRACTION_NUM_CPUS: int = 1
-    EXTRACTION_MEMORY_MB: int = 2048
+    EXTRACTION_MEMORY_MB: int = 8192
 
     # Stage 2: Chunking
     CHUNKING_NUM_CPUS: int = 1
@@ -89,8 +127,12 @@ class PipelineConfig:
     # ========================================================================
     # API KEYS & LOGGING
     # ========================================================================
-    OPENAI_API_KEY: str = os.getenv('OPENAI_API_KEY', '')
-    PINECONE_API_KEY: str = os.getenv('PINECONE_API_KEY', '')
+    # _parse_secret handles both plain-string and JSON-object secret formats.
+    # If your secret is stored as plain text in Secrets Manager this is a no-op.
+    # If it is stored as JSON e.g. {"OPENAI_API_KEY": "sk-..."},
+    # _parse_secret extracts the value automatically — fixing the 401 error.
+    OPENAI_API_KEY: str = _parse_secret('OPENAI_API_KEY')
+    PINECONE_API_KEY: str = _parse_secret('PINECONE_API_KEY')
 
     POLLING_INTERVAL: int = int(os.getenv('POLLING_INTERVAL', '30'))
     MAX_DOCUMENTS_PER_POLL: int = int(os.getenv('MAX_DOCUMENTS_PER_POLL', '10'))

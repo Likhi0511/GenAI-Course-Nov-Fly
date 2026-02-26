@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "S3BucketName",
-    "ParameterValue": "ray-ingestion-prudhvi-6-feb-2026"
+    "ParameterValue": "ray-ingestion-prudhvi-10-feb-2026"
   },
   {
     "ParameterKey": "RayHeadCPU",
@@ -25,7 +25,7 @@
   },
   {
     "ParameterKey": "RayWorkerMemory",
-    "ParameterValue": "8192"
+    "ParameterValue": "16384"
   },
   {
     "ParameterKey": "MinWorkers",

@@ -88,7 +88,6 @@ import signal
 import sys
 import logging
 import boto3
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
@@ -182,6 +181,95 @@ def interruptible_sleep(seconds: int):
 # ============================================================================
 # DYNAMODB OPERATIONS
 # ============================================================================
+
+MAX_RETRY_ATTEMPTS = 3          # Documents failing more than this stay FAILED permanently
+RETRY_AFTER_MINUTES = 10       # Wait 10 minutes before retrying a FAILED document
+
+
+def retry_failed_documents():
+    """
+    Reset recently-failed documents back to PENDING so they are retried.
+
+    Only resets documents that:
+      1. Have status = FAILED
+      2. Have retry_count < MAX_RETRY_ATTEMPTS (prevents infinite retry loops)
+      3. Failed within the last RETRY_AFTER_MINUTES minutes
+
+    Transient failures (network blips, API timeouts, brief OOM) are retried.
+    Permanent failures (corrupt PDF, invalid config) stop after MAX_RETRY_ATTEMPTS.
+    """
+    try:
+        dynamodb = boto3.resource("dynamodb", region_name=config.AWS_REGION)
+        table    = dynamodb.Table(config.DYNAMODB_CONTROL_TABLE)
+
+        # Query the GSI for FAILED documents
+        response = table.query(
+            IndexName="status-updated-index",
+            KeyConditionExpression=Key("status").eq("FAILED"),
+            Limit=50,
+        )
+
+        items = response.get("Items", [])
+        if not items:
+            return
+
+        now = datetime.now(tz=__import__('datetime').timezone.utc)
+        retry_cutoff = now - timedelta(minutes=RETRY_AFTER_MINUTES)
+        reset_count = 0
+
+        for item in items:
+            retry_count = int(item.get("retry_count", 0))
+            if retry_count >= MAX_RETRY_ATTEMPTS:
+                continue  # Exhausted retries — leave permanently FAILED
+
+            # Parse the updated_at timestamp
+            updated_str = item.get("updated_at", "")
+            try:
+                updated_at = datetime.fromisoformat(updated_str.rstrip("Z")).replace(
+                    tzinfo=__import__('datetime').timezone.utc
+                )
+            except (ValueError, AttributeError):
+                continue
+
+            if updated_at > retry_cutoff:
+                continue  # Failed too recently — wait before retrying
+
+            # Reset to PENDING with incremented retry_count
+            try:
+                timestamp = datetime.now(tz=__import__('datetime').timezone.utc).isoformat()
+                table.update_item(
+                    Key={
+                        "document_id"       : item["document_id"],
+                        "processing_version": item["processing_version"],
+                    },
+                    UpdateExpression=(
+                        "SET #status = :pending, updated_at = :ts, "
+                        "retry_count = :rc, current_stage = :stage, #msg = :msg"
+                    ),
+                    ConditionExpression=Attr("status").eq("FAILED"),
+                    ExpressionAttributeNames={"#status": "status", "#msg": "message"},
+                    ExpressionAttributeValues={
+                        ":pending": "PENDING",
+                        ":ts"     : timestamp,
+                        ":rc"     : retry_count + 1,
+                        ":stage"  : "RETRY_QUEUED",
+                        ":msg"    : f"Auto-retry attempt {retry_count + 1} of {MAX_RETRY_ATTEMPTS}",
+                    },
+                )
+                reset_count += 1
+                logger.info(
+                    f"  ↻ Queued retry {retry_count + 1}/{MAX_RETRY_ATTEMPTS} "                    f"for {item['document_id']}"
+                )
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    logger.error(f"Error resetting {item['document_id']}: {e}")
+
+        if reset_count:
+            logger.info(f"✓ Reset {reset_count} failed documents to PENDING for retry")
+
+    except Exception as e:
+        logger.error(f"✗ Error in retry_failed_documents: {e}", exc_info=True)
+
 
 def query_pending_documents() -> List[Dict]:
     """
@@ -614,7 +702,6 @@ def process_document(document: Dict):
         )
 
         logger.info(f"✓ Pipeline complete for {document_id}")
-        return True   # Signal success to concurrent caller
 
     except Exception as e:
         # Any stage failure or shutdown abort lands here.
@@ -628,7 +715,6 @@ def process_document(document: Dict):
             message=f"Pipeline error: {str(e)}",
             current_stage="FAILED",
         )
-        return False  # Signal failure to concurrent caller
 
 
 # ============================================================================
@@ -821,77 +907,36 @@ def main():
         try:
             poll_count += 1
             logger.info(f"\n{'=' * 70}")
-            logger.info(f"POLL #{poll_count} — {datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]}Z")
+            logger.info(f"POLL #{poll_count} — {datetime.now(tz=timezone.utc).isoformat()}Z")
             logger.info(f"{'=' * 70}")
+
+            # Reset recently-failed documents for retry (up to MAX_RETRY_ATTEMPTS)
+            retry_failed_documents()
 
             pending_documents = query_pending_documents()
 
             if not pending_documents:
                 logger.info("No pending documents found")
             else:
-                batch_size = len(pending_documents)
-                logger.info(f"Found {batch_size} documents — submitting all concurrently")
+                logger.info(f"Found {len(pending_documents)} documents to process")
 
-                # ──────────────────────────────────────────────────────────
-                # CONCURRENT BATCH PROCESSING
-                # ──────────────────────────────────────────────────────────
-                # WHY ThreadPoolExecutor here?
-                #
-                # Each process_document() call drives ONE document through 5
-                # sequential ray.get() calls. Without threading, the orchestrator
-                # processes documents one-at-a-time: submit doc1 → wait all 5
-                # stages → submit doc2 → ... Only 1-2 workers are ever busy.
-                #
-                # With ThreadPoolExecutor, all N documents are submitted
-                # simultaneously. Each thread manages its own pipeline and
-                # blocks on its own ray.get() calls independently. Ray sees
-                # N×5 concurrent tasks and distributes them across all workers.
-                #
-                # max_workers = min(batch_size, MaxWorkers from config):
-                #   - Caps threads at the number of workers Ray has available
-                #   - Prevents spawning 20 threads when only 10 workers exist
-                #   - Each thread spends most of its time blocked in ray.get()
-                #     so thread overhead is negligible vs. task runtime
-                # ──────────────────────────────────────────────────────────
-                max_concurrent = min(batch_size, config.MAX_DOCUMENTS_PER_POLL)
-                batch_success = 0
-                batch_errors  = 0
+                for doc in pending_documents:
+                    # Check flag before each document — allows fast shutdown
+                    # even when processing a large batch.
+                    if shutdown_requested:
+                        logger.info("Shutdown requested — stopping mid-batch cleanly")
+                        break
 
-                with ThreadPoolExecutor(max_workers=max_concurrent) as pool:
-                    # Submit all documents to the thread pool simultaneously
-                    future_to_doc = {
-                        pool.submit(process_document, doc): doc
-                        for doc in pending_documents
-                        if not shutdown_requested
-                    }
+                    try:
+                        process_document(doc)
+                        total_processed += 1
+                    except Exception as doc_err:
+                        # process_document() catches its own errors internally and marks
+                        # the doc FAILED, but if something truly unexpected escapes, count it.
+                        total_errors += 1
+                        logger.error(f"❌ Unexpected error processing {doc.get('document_id', '?')}: {doc_err}", exc_info=True)
 
-                    # Collect results as each pipeline completes (order not guaranteed)
-                    for future in as_completed(future_to_doc):
-                        doc = future_to_doc[future]
-                        doc_id = doc.get("document_id", "unknown")
-                        try:
-                            success = future.result()
-                            if success:
-                                batch_success  += 1
-                                total_processed += 1
-                            else:
-                                batch_errors += 1
-                                total_errors += 1
-                        except Exception as exc:
-                            batch_errors += 1
-                            total_errors += 1
-                            logger.error(f"❌ Unexpected thread error for {doc_id}: {exc}", exc_info=True)
-
-                        if shutdown_requested:
-                            logger.info("Shutdown requested — cancelling remaining futures")
-                            for f in future_to_doc:
-                                f.cancel()
-                            break
-
-                logger.info(
-                    f"Batch complete — {batch_success} succeeded, "
-                    f"{batch_errors} failed out of {batch_size} documents"
-                )
+                logger.info(f"Processed {len(pending_documents)} documents this poll")
 
             # Log running stats after every poll
             logger.info(
