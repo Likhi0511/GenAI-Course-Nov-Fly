@@ -173,16 +173,29 @@ def deploy_cloudformation():
         waiter = cf.get_waiter(waiter_name)
         waiter.wait(
             StackName=STACK_NAME,
-            WaiterConfig={"Delay": 30, "MaxAttempts": 60}  # EKS creation takes ~15-20 min
+            WaiterConfig={"Delay": 30, "MaxAttempts": 90}  # EKS creation takes ~20-35 min
         )
         print(f"\n✅ Stack completed successfully!\n")
         return True
     except Exception as e:
-        # Print last few events to show what failed
-        print(f"\n❌ Stack did not complete: {e}")
+        # Check if waiter timed out but stack is still running vs genuinely failed
+        try:
+            status = get_stack_status(STACK_NAME, cf)
+        except Exception:
+            status = "UNKNOWN"
+
+        if "IN_PROGRESS" in status:
+            print(f"\n⚠️  Waiter timed out but stack is still {status}")
+            print(f"   The EKS cluster is still being created — this is normal.")
+            print(f"   Wait a few more minutes, then re-run this script.")
+            print(f"   It will detect the existing stack and wait again.")
+            print(f"\n   Monitor: aws cloudformation describe-stacks --stack-name {STACK_NAME} --query \'Stacks[0].StackStatus\'")
+            return False
+
+        print(f"\n❌ Stack did not complete: {e}  (status: {status})")
         try:
             events = cf.describe_stack_events(StackName=STACK_NAME)["StackEvents"]
-            failed = [e for e in events if "FAILED" in e.get("ResourceStatus", "")][:5]
+            failed = [ev for ev in events if "FAILED" in ev.get("ResourceStatus", "")][:5]
             if failed:
                 print("\nFailed resources:")
                 for ev in failed:

@@ -751,24 +751,10 @@ Resources:
       Timeout: 120
       Code:
         ZipFile: |
-          import boto3, cfnresponse, hashlib, urllib.request, json
+          import boto3, cfnresponse, json
 
           eks = boto3.client('eks')
           iam = boto3.client('iam')
-
-          def get_thumbprint(url):
-              # Fetch TLS certificate thumbprint for OIDC provider trust
-              import ssl, socket
-              from urllib.parse import urlparse
-              parsed = urlparse(url)
-              host   = parsed.netloc
-              ctx    = ssl.create_default_context()
-              conn   = ctx.wrap_socket(socket.socket(), server_hostname=host)
-              conn.settimeout(5)
-              conn.connect((host, 443))
-              cert_der = conn.getpeercert(binary_form=True)
-              conn.close()
-              return hashlib.sha1(cert_der).hexdigest()
 
           def handler(event, context):
               cluster_name = event['ResourceProperties']['ClusterName']
@@ -776,7 +762,11 @@ Resources:
                   if event['RequestType'] in ('Create', 'Update'):
                       cluster = eks.describe_cluster(name=cluster_name)['cluster']
                       issuer  = cluster['identity']['oidc']['issuer']
-                      thumb   = get_thumbprint(issuer)
+                      # AWS ignores thumbprints for *.amazonaws.com OIDC providers
+                      # (as of 2023, AWS uses its own CA bundle for these endpoints).
+                      # Using the well-known root CA thumbprint avoids any SSL socket
+                      # calls that can hang in restricted network environments.
+                      thumb = '9e99a48a9960b14926bb7f3b02e22da2b0ab7280'
                       resp = iam.create_open_id_connect_provider(
                           Url=issuer,
                           ClientIDList=['sts.amazonaws.com'],

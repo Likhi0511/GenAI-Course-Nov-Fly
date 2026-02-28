@@ -41,8 +41,11 @@ Organization: Thoughtworks
 import ray
 import json
 import time
+import asyncio               # Required to run async process_pdf from sync Ray worker
 import logging
+import boto3
 from typing import Dict
+from pathlib import Path
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
@@ -53,8 +56,14 @@ from datetime import datetime
 #   - Preserves table structure as markdown
 #   - Extracts images and sends them to GPT-4o for text descriptions
 #   - Wraps each element in HTML boundary markers for precise chunking later
-from docling_bounded_extractor import process_pdf as bounded_process_pdf
-from openai import OpenAI as _OpenAI  # Used by Docling to describe images/tables
+#   - Uploads all assets (tables, images, page .md files) to S3 directly
+#   - Stores s3_uri + ai_description in every boundary marker attribute
+#
+# v5 change: module renamed from docling_bounded_extractor → docling_pdf_extractor.
+# process_pdf is now async (asyncio.run() required at each call site).
+# Client parameter renamed openai_client → client and must be AsyncOpenAI, not OpenAI.
+from docling_pdf_extractor import process_pdf as bounded_process_pdf
+from openai import AsyncOpenAI as _AsyncOpenAI  # v5: async client required by process_pdf
 
 # Stage 2 — Boundary-aware chunker that:
 #   - Respects document structure (never splits mid-paragraph or mid-table)
@@ -70,7 +79,10 @@ from comprehensive_chunker import (
 #   - PII detection + redaction  (emails, phone numbers, SSNs → [REDACTED])
 #   - Named Entity Recognition   (people, orgs, medications, locations)
 #   - Key phrase extraction       (important terms for better search recall)
-from enrich_pipeline_openai import enrich_chunk, init_openai_client
+from enrich_pipeline_openai import (
+    enrich_chunks_async,         # async parallel enrichment of a full chunk list
+    init_openai_client,          # returns AsyncOpenAI client
+)
 
 # Stage 4 — OpenAI embeddings with built-in safeguards:
 #   - Exponential-backoff retry for 429 rate-limit errors
@@ -110,21 +122,31 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # STAGE 1: PDF EXTRACTION
 # ============================================================================
-# Purpose : Convert a raw PDF into per-page markdown files with boundary markers.
+# Purpose : Convert a raw PDF into per-page markdown files with boundary markers,
+#           AI descriptions, and S3-uploaded assets.
 #
 # Input   : PDF file at s3://<bucket>/<s3_key>
 # Output  : Folder at s3://<bucket>/extracted/<doc_id>/
 #             pages/page_1.md … page_N.md   ← text with <!-- BOUNDARY --> markers
-#             figures/fig_p1_0.png …         ← extracted images
-#             metadata.json                 ← page count, image count, etc.
+#             tables/p3_table_1.md …        ← raw table markdown (new in v5)
+#             images/fig_p3_1.png …         ← extracted figures
+#             metadata.json                 ← page count, image count, tables, timing
+#
+# v5 changes vs v4:
+#   - process_pdf is now async; asyncio.run() wraps the call here.
+#   - Extractor uploads tables, images, and page .md files to S3 directly.
+#     Each boundary marker now carries s3_uri="s3://…" and ai_description="…".
+#   - Stage 2 (chunker) no longer needs S3 client, LLM client, or figures/.
+#     It reads s3_uri + ai_description from the boundary attrs written here.
+#   - Client param renamed: openai_client= → client= (AsyncOpenAI instance).
 #
 # Why boundary markers?
 #   Without: "...paragraph ends.TABLE| data |TABLE.Next paragraph..."
-#   With:    "...paragraph ends.<!-- BOUNDARY_START:TABLE -->| data |<!-- BOUNDARY_END:TABLE -->..."
-#   Stage 2 can then extract tables as complete, indivisible atomic units.
+#   With:    "...paragraph ends.<!-- BOUNDARY_START type="table" -->| data |<!-- BOUNDARY_END -->..."
+#   Stage 2 extracts tables as complete, indivisible atomic units.
 #
 # Cost : ~$0.01–$0.05 per document  (GPT-4o image/table descriptions)
-# Time : ~30–60 seconds per document
+# Time : ~30–60 seconds per document (async concurrent enrichment reduces latency)
 # ============================================================================
 
 @ray.remote(
@@ -164,9 +186,18 @@ def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
     # Initialise helpers inside the function — not at module level.
     # Ray runs each @ray.remote call in a separate worker process, so
     # module-level objects created on the driver would NOT be available here.
-    s3_helper     = S3Helper(bucket=config.S3_BUCKET, region=config.AWS_REGION)
-    file_manager  = LocalFileManager()
-    openai_client = _OpenAI(api_key=config.OPENAI_API_KEY)  # Used by Docling for image descriptions
+    s3_helper    = S3Helper(bucket=config.S3_BUCKET, region=config.AWS_REGION)
+    file_manager = LocalFileManager()
+
+    # v5: process_pdf is async and uses asyncio.gather() for concurrent AI enrichment
+    # per page.  It requires AsyncOpenAI — passing the sync OpenAI() client raises
+    # AttributeError when the async coroutines try to use it.
+    openai_client = _AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+
+    # v5: The extractor now uploads all assets (table Markdown, image PNGs, page .md
+    # files, metadata.json) to S3 itself, writing s3_uri into each boundary marker attr.
+    # Stage 2 reads s3_uri from the attr — it needs no S3 client of its own.
+    s3_client_stage1 = boto3.client("s3", region_name=config.AWS_REGION)
 
     # Create an isolated temp workspace: /tmp/workspaces/<doc_id>/
     # Each document gets its own folder so concurrent workers don't collide.
@@ -186,18 +217,32 @@ def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
             raise Exception(f"Failed to download PDF from s3://{s3_bucket}/{s3_key}")
 
         # ------------------------------------------------------------------
-        # STEP 2: Run Docling extraction (with GPT-4o image/table descriptions)
+        # STEP 2: Run Docling extraction (async — concurrent AI enrichment)
         # ------------------------------------------------------------------
-        # bounded_process_pdf does three things internally:
+        # process_pdf is async (v5) and runs all AI enrichment calls per page
+        # concurrently via asyncio.gather().  asyncio.run() bridges the sync
+        # Ray worker into the async extractor without needing a running event loop.
+        #
+        # What process_pdf does internally:
         #   a) Parses PDF structure: pages, paragraphs, tables, figures
-        #   b) Sends images and complex tables to GPT-4o for text descriptions
-        #   c) Wraps every element in <!-- BOUNDARY_START:TYPE --> HTML comment markers
-        # Returns a metadata dict with per-page breakdown (page count, images, tables).
-        log.info("Running bounded Docling extraction...")
-        metadata = bounded_process_pdf(
-            pdf_path=local_pdf,
-            output_base_dir=local_output_base,
-            openai_client=openai_client,
+        #   b) Generates AI descriptions for tables, images, formulas, code
+        #      (all calls on a page run concurrently — much faster than sequential)
+        #   c) Uploads table .md, image PNGs, page .md files, metadata.json to S3
+        #   d) Writes s3_uri + ai_description into every boundary marker attr
+        #
+        # Parameter changes from v4:
+        #   openai_client= → client=   (renamed in extractor v5 signature)
+        #   s3_client=, s3_bucket=, doc_id= are new required-for-S3-upload args
+        log.info("Running bounded Docling extraction (async v5)...")
+        metadata = asyncio.run(
+            bounded_process_pdf(
+                pdf_path=local_pdf,
+                output_base_dir=local_output_base,
+                client=openai_client,              # AsyncOpenAI instance
+                s3_client=s3_client_stage1,        # Uploads assets during extraction
+                s3_bucket=config.S3_BUCKET,        # Target bucket
+                doc_id=document_id,                # S3 key prefix: {doc_id}/pages/, /tables/, /images/
+            )
         )
 
         # Docling writes its output under <output_base>/<pdf_stem>/
@@ -263,11 +308,22 @@ def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
 # ============================================================================
 # STAGE 2: SEMANTIC CHUNKING
 # ============================================================================
-# Purpose : Split per-page markdown into optimally-sized semantic chunks.
+# Purpose : Parse Stage-1 boundary-marked .md files and group elements into
+#           optimally-sized semantic chunks.
 #
 # Input   : Markdown pages with boundary markers from Stage 1
 #             s3://<bucket>/extracted/<doc_id>/pages/page_N.md
 # Output  : Single JSON at s3://<bucket>/chunks/<doc_id>_chunks.json
+#
+# v5 changes vs v4:
+#   - figures/ download block REMOVED — Stage 1 already uploaded PNGs to S3
+#     and stored s3_uri in each boundary marker attr.  Stage 2 no longer needs
+#     the raw PNG bytes; it just reads the s3_uri string from the attr.
+#   - s3_client=, bucket_name=, llm_client=, figures_dir= params REMOVED from
+#     create_semantic_chunks() — all S3 uploads and AI descriptions happened in
+#     Stage 1.  Passing these params now raises TypeError (unexpected keyword arg).
+#   - create_semantic_chunks() is now pure text processing:
+#     re, html, logging, pathlib only — zero API calls, zero boto3.
 #
 # Why chunk at all?
 #   - LLMs have context limits; we need pieces small enough to fit in a prompt
@@ -280,7 +336,7 @@ def extract_pdf(document_id: str, s3_bucket: str, s3_key: str) -> Dict:
 #   CHUNK_MAX_SIZE    = 3000 chars  (hard ceiling to keep search precise)
 #
 # Cost : FREE — pure CPU, zero API calls
-# Time : ~5–10 seconds per document
+# Time : ~2–5 seconds per document  (faster than v4; no blocking LLM calls)
 # ============================================================================
 
 @ray.remote(
@@ -327,10 +383,14 @@ def chunk_document(document_id: str, extracted_s3_prefix: str) -> Dict:
         # ------------------------------------------------------------------
         # STEP 1: Download extracted pages from S3
         # ------------------------------------------------------------------
-        # Pull all page_N.md files that Stage 1 produced.
-        # These contain text wrapped in <!-- BOUNDARY_START/END:TYPE --> markers
-        # that tell the chunker exactly where each element begins and ends.
+        # Pull all page_N.md files (boundary-marked text) written by Stage 1.
+        #
+        # v5: figures/ download REMOVED.
+        # Stage 1 now uploads PNGs to S3 and writes s3_uri into each image
+        # boundary marker attr at extraction time.  Stage 2 reads that s3_uri
+        # string from the attr — it never needs the raw PNG bytes.
         pages_prefix = f"{extracted_s3_prefix}/pages/"
+
         if not s3_helper.download_directory(pages_prefix, str(local_pages_dir)):
             raise Exception(
                 f"Failed to download pages from s3://{config.S3_BUCKET}/{pages_prefix}"
@@ -357,18 +417,21 @@ def chunk_document(document_id: str, extracted_s3_prefix: str) -> Dict:
         # ------------------------------------------------------------------
         # STEP 3: Group atomic chunks into semantic chunks
         # ------------------------------------------------------------------
-        # Algorithm:
-        #   1. Accumulate atomic chunks into a "current" semantic chunk
-        #   2. When current size > TARGET_SIZE AND next element would push
-        #      it over MAX_SIZE → flush current chunk and start a new one
-        #   3. Never split mid-element (boundary markers prevent this)
-        # Result: every chunk is a complete thought — no dangling sentences.
+        # Accumulates atomic chunks into a buffer until target_size is reached,
+        # then flushes — respecting section boundaries and the hard max_size ceiling.
+        # Offloaded assets (large tables, images) are handled by reading the
+        # s3_uri + ai_description that Stage 1 already wrote into boundary attrs.
+        #
+        # v5: s3_client=, bucket_name=, llm_client=, figures_dir= params REMOVED.
+        # Stage 1 performed all S3 uploads and AI description generation.
+        # Passing these params now raises TypeError: unexpected keyword argument.
+        # create_semantic_chunks() is pure text processing — no API calls, no boto3.
         log.info(f"Grouping {len(atomic_chunks)} atomic chunks into semantic chunks...")
         semantic_chunks = create_semantic_chunks(
             atomic_chunks,
-            target_size=config.CHUNK_TARGET_SIZE,  # Aim for ~1500 chars
-            min_size=config.CHUNK_MIN_SIZE,         # Never emit a chunk smaller than 500 chars
-            max_size=config.CHUNK_MAX_SIZE,         # Hard ceiling at 3000 chars
+            target_size=config.CHUNK_TARGET_SIZE,
+            min_size=config.CHUNK_MIN_SIZE,
+            max_size=config.CHUNK_MAX_SIZE,
         )
 
         # ------------------------------------------------------------------
@@ -487,7 +550,7 @@ def enrich_chunks(document_id: str, chunks_s3_key: str) -> Dict:
     start_time = time.time()
     log = logging.getLogger(__name__)
 
-    # init_openai_client wraps OpenAI() with any project-level defaults from config
+    # init_openai_client returns AsyncOpenAI — required by enrich_chunks_async()
     openai_client = init_openai_client(api_key=config.OPENAI_API_KEY)
     s3_helper     = S3Helper(bucket=config.S3_BUCKET, region=config.AWS_REGION)
     file_manager  = LocalFileManager()
@@ -515,21 +578,30 @@ def enrich_chunks(document_id: str, chunks_s3_key: str) -> Dict:
             raise Exception("Chunks file is empty or malformed")
 
         # ------------------------------------------------------------------
-        # STEP 2: Enrich every chunk via GPT-4o-mini
+        # STEP 2: Enrich all chunks concurrently via async AsyncOpenAI
         # ------------------------------------------------------------------
-        # enrich_chunk makes ONE API call per chunk that:
-        #   a) Detects + redacts PII     → result in chunk["content_sanitised"]
+        # enrich_chunks_async fires ONE API call per chunk in parallel
+        # (bounded by a semaphore of 20 concurrent calls).  For 71 chunks
+        # at ~1s each, sequential would take ~71s; async takes ~4–6s.
+        #
+        # Each call performs three operations in one prompt:
+        #   a) Detects + redacts PII     → chunk["content_sanitised"]
         #   b) Extracts named entities   → chunk["metadata"]["entities"]
         #   c) Extracts key phrases      → chunk["metadata"]["key_phrases"]
         #   d) Extracts monetary values  → chunk["metadata"]["monetary_values"] (local regex, free)
         #
-        # IMPORTANT: Stage 4 embeds content_sanitised, not original content.
-        # This ensures PII never reaches Pinecone vector metadata.
-        log.info(f"Enriching {len(chunks)} chunks via gpt-4o-mini...")
-        enriched_chunks = [
-            enrich_chunk(chunk, openai_client, model="gpt-4o-mini")
-            for chunk in chunks
-        ]
+        # asyncio.run() starts a fresh event loop in this Ray worker process,
+        # runs all enrichment coroutines to completion, then returns.
+        # Ray workers are regular Python processes — asyncio.run() is safe here.
+        log.info(f"Enriching {len(chunks)} chunks via async gpt-4o-mini...")
+        enriched_chunks = asyncio.run(
+            enrich_chunks_async(
+                chunks=chunks,
+                client=openai_client,
+                max_concurrent=20,
+                model="gpt-4o-mini",
+            )
+        )
 
         # ------------------------------------------------------------------
         # STEP 3: Save enriched data to disk
@@ -641,9 +713,12 @@ def generate_embeddings_task(document_id: str, enriched_s3_key: str) -> Dict:
     start_time = time.time()
     log = logging.getLogger(__name__)
 
-    # init_embedding_client returns an OpenAI client configured for the embeddings API.
-    # Aliased on import to avoid collision with Stage 3's init_openai_client.
-    client       = init_embedding_client()
+    # Pass config.OPENAI_API_KEY explicitly rather than letting init_embedding_client()
+    # call os.getenv() itself.  On ECS, Secrets Manager injects the key as a JSON
+    # object {"OPENAI_API_KEY": "sk-..."} — calling os.getenv() directly returns
+    # that raw JSON string, which OpenAI rejects with 401 AuthenticationError.
+    # config._parse_secret() already unwraps it; passing the result here is the fix.
+    client       = init_embedding_client(api_key=config.OPENAI_API_KEY)
     s3_helper    = S3Helper(bucket=config.S3_BUCKET, region=config.AWS_REGION)
     file_manager = LocalFileManager()
 

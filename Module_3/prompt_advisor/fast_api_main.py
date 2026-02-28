@@ -1160,19 +1160,19 @@ async def shutdown_event():
 # ============================================================================
 
 # This block only runs when the file is executed directly (not imported)
-# Allows running the API with: python open_ai_version.py
-# if __name__ == "__main__":
-#     # Import uvicorn server
-#     import uvicorn
-#
-#     logger.info("Starting application via direct execution")
-#
-#     # Run the FastAPI application
-#     # host="0.0.0.0" makes it accessible from other machines
-#     # port=8000 is the default HTTP port for the API
-#     uvicorn.run(
-#         app,  # FastAPI application instance
-#         host="0.0.0.0",  # Listen on all network interfaces
-#         port=8000,  # Port number
-#         log_level="info"  # Uvicorn log level
-#     )
+#Allows running the API with: python open_ai_version.py
+if __name__ == "__main__":
+    # Import uvicorn server
+    import uvicorn
+
+    logger.info("Starting application via direct execution")
+
+    # Run the FastAPI application
+    # host="0.0.0.0" makes it accessible from other machines
+    # port=8000 is the default HTTP port for the API
+    uvicorn.run(
+        app,  # FastAPI application instance
+        host="0.0.0.0",  # Listen on all network interfaces
+        port=8000,  # Port number
+        log_level="info"  # Uvicorn log level
+    )

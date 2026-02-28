@@ -1,3147 +1,1727 @@
 """
-Docling PDF Extractor with Boundary Markers
---------------------------------------------
-Functional programming version for easy understanding.
+===============================================================================
+docling_pdf_extractor.py  —  Boundary-Based PDF Extraction Engine  v5
+===============================================================================
 
-================================================================================
-                    INTELLIGENT PDF EXTRACTION FOR RAG
-================================================================================
+Author  : Prudhvi  |  Thoughtworks
+Version : v5  (Async + Production-Hardened)
+Stage   : 1 of 5  (Extract → Chunk → Enrich → Embed → Store)
 
-This script is the FIRST STAGE of our document processing pipeline.
-It converts PDFs into structured, searchable Markdown with AI-powered analysis.
+-------------------------------------------------------------------------------
+SINGLE RESPONSIBILITY
+-------------------------------------------------------------------------------
 
-Think of it as a "PDF to structured text" converter that:
-✓ Preserves document structure (headers, paragraphs, tables, images)
-✓ Adds AI descriptions (GPT-4o analyzes charts and tables)
-✓ Wraps everything in boundary markers (for precise chunking later)
-✓ Outputs clean Markdown files (one per page)
+This module owns exactly three tightly-coupled concerns:
 
-WHY THIS MATTERS FOR RAG
--------------------------
-RAG (Retrieval Augmented Generation) needs:
-1. Clean text chunks → We provide semantic boundaries
-2. Rich metadata → We add AI descriptions and document structure
-3. Preserve context → We track breadcrumbs (which section are we in?)
-4. Handle complexity → We extract tables and images, not just text
+  1. EXTRACT
+     ─────────
+     Uses Docling's ML layout model to identify and classify every structural
+     element in the PDF without regex heuristics:
 
-Example: A PDF about clinical trials becomes:
-- pages/page_1.md   ← Text with headers and context
-- pages/page_2.md   ← Tables with AI analysis
-- pages/page_3.md   ← Images with AI descriptions
-- metadata.json     ← Index of everything
+       • Section headers   (level-aware breadcrumb trail)
+       • Paragraphs        (text body)
+       • List items        (bullet / enumeration)
+       • Tables            (text-first; image fallback for complex layouts)
+       • Images / Figures  (PNG at 216 DPI)
+       • Mathematical formulas
+       • Code blocks
 
-================================================================================
-                              PIPELINE OVERVIEW
-================================================================================
+     Noise elements (PAGE_HEADER, PAGE_FOOTER) are discarded by Docling label,
+     not by string matching — works on any PDF, any domain, any language.
 
-Per PDF, we execute 4 main steps:
+  2. ENRICH  (Async)
+     ──────────────────
+     Generates AI descriptions for elements whose raw text embeds poorly
+     in vector space.  All four enrichment types run concurrently per page:
 
-Step 1: DOCLING PARSING
-   - Docling (IBM) analyzes PDF layout
-   - Detects: text blocks, tables, figures, headers, lists
-   - Uses machine learning (TableFormer) for complex tables
+       • Tables   →  7-dimension analytical narrative
+                     gpt-4o  |  1500–3000 chars  |  always
+       • Images   →  6-dimension visual analysis
+                     gpt-4o Vision  |  1000–2000 chars  |  always
+       • Formulas →  3-dimension semantic interpretation
+                     gpt-4o-mini  |  200–500 chars  |  always
+                     (raw math symbols embed as near-random vectors)
+       • Code     →  3-dimension plain-language explanation
+                     gpt-4o-mini  |  200–500 chars
+                     (only for blocks > CODE_DESCRIPTION_MIN_LEN chars)
 
-Step 2: PAGE GROUPING
-   - Items are grouped by page number
-   - Creates document structure for sequential processing
+     Every AI call is:
+       • Timeout-protected  (OPENAI_TIMEOUT seconds)
+       • Rate-limit-aware   (exponential back-off, MAX_RETRIES attempts)
+       • Gracefully degrading (failure → stub string, pipeline continues)
 
-Step 3: ELEMENT PROCESSING
-   Each element type gets specialized handling:
+  3. UPLOAD
+     ────────
+     Uploads every asset to S3 immediately after extraction so that Stage 2
+     (the chunker) can run on a completely different ECS / Fargate worker:
 
-   Headers    → Markdown headings (##, ###) + breadcrumb trail
-   Paragraphs → Plain text with word/char counts
-   Lists      → Bullet/numbered items
-   Code       → Fenced code blocks with language detection
-   Tables     → Two strategies:
-                1. Text export (fast, cheap, preferred)
-                2. Image export (fallback for complex tables)
-   Images     → PNG file + GPT-4 Vision description
+       • Table Markdown  →  {doc_id}/tables/{id}.md
+       • Image PNG       →  {doc_id}/images/{filename}
+       • Page .md files  →  {doc_id}/pages/page_N.md
+       • metadata.json   →  {doc_id}/metadata.json
 
-Step 4: BOUNDARY WRAPPING
-   Every element is wrapped in HTML comments:
+     The S3 URI is written into the boundary marker attribute s3_uri="…"
+     so Stage 2 reads it directly from the .md file — zero boto3 dependency
+     in the chunker.
 
-   <!-- BOUNDARY_START type="table" id="p5_table_1" page="5" -->
-   | Revenue | 2024   |
-   |---------|--------|
-   | Q1      | $125M  |
-   <!-- BOUNDARY_END type="table" id="p5_table_1" -->
+-------------------------------------------------------------------------------
+WHY ASYNC HERE
+-------------------------------------------------------------------------------
 
-   Why boundaries?
-   - RAG chunker can extract exact elements
-   - No need to re-parse Markdown
-   - Preserves document structure perfectly
+A 50-page clinical trial protocol may contain:
+  • 20 tables  → 20 × gpt-4o calls  (~3 s each)
+  • 15 images  → 15 × gpt-4o-vision calls  (~4 s each)
+  •  8 formulas → 8 × gpt-4o-mini calls  (~1 s each)
 
-================================================================================
-                            OUTPUT STRUCTURE
-================================================================================
+Sequential execution: ~130 s of wall-clock wait.
+asyncio.gather() over all items on a page: ~max(individual latencies) ≈ 4–6 s.
 
-For a PDF named "clinical_trial.pdf", we create:
+The Docling conversion itself is synchronous (CPU-bound, no benefit from
+async). Only the OpenAI enrichment calls run concurrently.
 
-extracted_docs_bounded/
-└── clinical_trial/
-    ├── metadata.json           ← Index: pages, counts, processing time
+-------------------------------------------------------------------------------
+DISPATCH ORDER  (critical — do not reorder)
+-------------------------------------------------------------------------------
+
+Within each page, items are dispatched in this exact order:
+
+  1. _SKIP_LABELS       PAGE_HEADER, PAGE_FOOTER  → discard
+  2. DocItemLabel.CODE  → process_code()
+  3. DocItemLabel.FORMULA → process_formula()
+  4. SectionHeaderItem  → process_header()   ← MUST be before TextItem
+  5. ListItem           → process_list()     ← MUST be before TextItem
+  6. TextItem           → process_text()     ← catch-all for paragraphs
+  7. PictureItem        → process_image()
+  8. TableItem          → process_table()
+
+Rules 4 and 5 are safety-critical: SectionHeaderItem and ListItem are
+TextItem subclasses.  Checking isinstance(item, TextItem) first would
+silently route them as plain paragraphs, losing header depth and list markers.
+
+Rules 2 and 3 are checked by label BEFORE any isinstance() test because
+Docling may represent CODE / FORMULA as plain TextItem with a label rather
+than a dedicated subclass.
+
+-------------------------------------------------------------------------------
+BOUNDARY CONTRACT
+-------------------------------------------------------------------------------
+
+Every extracted element is wrapped in a single-line HTML comment pair:
+
+  <!-- BOUNDARY_START type="table" id="p3_table_1" page="3" rows="8"
+       columns="5" has_caption="yes"
+       breadcrumbs="Results &gt; Efficacy"
+       s3_uri="s3://bucket/doc/tables/p3_table_1.md"
+       ai_description="1. PURPOSE &#x2014; ..." -->
+  | raw markdown table |
+  <!-- BOUNDARY_END type="table" id="p3_table_1" -->
+
+Attribute encoding rules (written here, reversed by html.unescape in Stage 2):
+  •  "  →  &quot;   (GPT output contains column names, quoted phrases)
+  •  \n →  space    (boundary markers must stay single-line for regex parsing)
+  •  \r →  space    (Windows carriage returns)
+
+AI descriptions are stored ONLY as boundary attributes — never embedded in
+the raw content body.  This keeps the S3-stored raw content clean and lets
+Stage 2 decide independently which representation to use for the VDB.
+
+-------------------------------------------------------------------------------
+OUTPUT LAYOUT (local + S3 mirror)
+-------------------------------------------------------------------------------
+
+Local (temporary worker storage):
+  output/<pdf_stem>/
     ├── pages/
-    │   ├── page_1.md          ← Page 1 text with boundaries
-    │   ├── page_2.md          ← Page 2 text with boundaries
-    │   ├── page_3.md          ← Page 3 text with boundaries
-    │   └── ...
-    └── figures/
-        ├── fig_p1_1.png       ← First image from page 1
-        ├── fig_p2_1.png       ← First image from page 2
-        └── ...
+    │     ├── page_1.md
+    │     └── page_N.md
+    ├── figures/
+    │     └── fig_p3_1.png
+    └── metadata.json
 
-Metadata.json Example:
-{
-  "file": "clinical_trial.pdf",
-  "processed": "2024-02-22T14:30:25",
-  "pages": [
-    {
-      "page": 1,
-      "file": "page_1.md",
-      "breadcrumbs": ["Introduction", "Background"],
-      "images": 2,
-      "tables": 1
-    }
-  ],
-  "total_images": 15,
-  "total_tables": 8
-}
+S3 (permanent):
+  s3://<bucket>/<doc_id>/
+    ├── pages/page_1.md … page_N.md
+    ├── tables/p3_table_1.md …
+    ├── images/fig_p3_1.png …
+    └── metadata.json
 
-================================================================================
-                          BOUNDARY MARKER FORMAT
-================================================================================
-
-Boundaries are HTML comments (invisible when rendered) that carry metadata:
-
-<!-- BOUNDARY_START type="paragraph" id="p3_text_2" page="3"
-     char_count="412" word_count="68" breadcrumbs="Results > Revenue" -->
-The company reported strong revenue growth in Q4 2024, with total
-revenue reaching $125 million, representing a 23% increase over Q3.
-<!-- BOUNDARY_END type="paragraph" id="p3_text_2" -->
-
-Why this format?
-✓ HTML comments don't interfere with Markdown rendering
-✓ Structured metadata is easily parseable (regex or XML parser)
-✓ Human-readable (can debug by reading the .md files)
-✓ Self-documenting (every element labeled)
-
-================================================================================
-                                 USAGE
-================================================================================
-
-Single PDF:
-  python docling_pdf_extractor.py clinical_trial.pdf
-
-Directory of PDFs:
-  python docling_pdf_extractor.py ./clinical_trials/
-
-Custom output directory:
-  python docling_pdf_extractor.py ./pdfs/ --output ./my_output
-
-Requirements:
-  pip install docling openai pandas tabulate
-  export OPENAI_API_KEY=sk-...
-
-================================================================================
-                            DEPENDENCIES
-================================================================================
-
-Core Libraries:
-- docling      : IBM's PDF extraction library (better than PyPDF2)
-- openai       : GPT-4o for image/table analysis
-- pandas       : Table manipulation and Markdown export
-- tabulate     : Table formatting (used by pandas)
-
-Why Docling?
-✓ ML-based layout analysis (better than rule-based)
-✓ Table structure preservation (not just text extraction)
-✓ Image extraction with rendering
-✓ Open source (no vendor lock-in)
-
-Alternatives We Considered:
-✗ PyPDF2      : Text-only, poor table handling
-✗ pdfplumber  : Better than PyPDF2 but still rule-based
-✗ Tesseract   : OCR for scanned PDFs (overkill for text PDFs)
-✓ Docling     : Best balance of quality and ease of use
-
-Author: Prudhvi | Thoughtworks
+-------------------------------------------------------------------------------
 """
 
-import os
+# ==============================================================================
+# STANDARD LIBRARY
+# ==============================================================================
+
 import sys
 import json
+import html
 import base64
+import asyncio
 import argparse
-import re
+import logging
+import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 
-# ---------------------------------------------------------------------------
-# DEPENDENCY GUARD
-# ---------------------------------------------------------------------------
-# Fail EARLY with a clear message if dependencies are missing.
-#
-# Why check imports explicitly?
-# - Better error messages than "AttributeError" deep in the code
-# - Tells user exactly what to install
-# - Fails at startup (not after processing starts)
-#
-# This pattern is called "fail fast" - detect problems immediately!
-# ---------------------------------------------------------------------------
+# ==============================================================================
+# THIRD-PARTY IMPORTS
+# ==============================================================================
+
 try:
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
-    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.base_models import InputFormat, DocItemLabel
     from docling.datamodel.document import (
-        TableItem, PictureItem, TextItem, SectionHeaderItem, ListItem
+        TableItem,
+        PictureItem,
+        TextItem,
+        SectionHeaderItem,
+        ListItem,
     )
-    from openai import OpenAI
+    from openai import AsyncOpenAI, RateLimitError
+    import boto3
     import pandas as pd
-except ImportError as e:
-    # Print helpful error message with installation command
+except ImportError as exc:
+    # Surface a clear install command rather than an opaque ImportError traceback.
     print(f"\n{'='*70}")
-    print("ERROR: Missing Required Library")
+    print("ERROR: Missing required dependency")
     print(f"{'='*70}")
-    print(f"Details: {e}")
-    print("\nPlease install dependencies:")
-    print("  pip install docling openai pandas tabulate")
-    print("\nThen set your OpenAI API key:")
-    print("  export OPENAI_API_KEY=sk-...")
+    print(f"  {exc}")
+    print("\nInstall all dependencies:")
+    print("  pip install docling openai boto3 pandas tabulate")
     print(f"{'='*70}\n")
     sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# GLOBAL CONFIGURATION CONSTANTS
-# ---------------------------------------------------------------------------
-# These settings control how the extraction pipeline behaves.
-# They're module-level constants (ALL_CAPS) to signal "don't change at runtime"
-# ---------------------------------------------------------------------------
+# ==============================================================================
+# LOGGING
+# ==============================================================================
 
-# Default output directory if --output flag not provided
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
+
+# Output root when running locally / without an explicit --output argument.
 OUTPUT_DIR = "extracted_docs_bounded"
 
-# Which OpenAI model to use for AI descriptions
-# gpt-4o is required because it has Vision capability (can analyze images)
-# gpt-3.5-turbo wouldn't work - no vision support
-OPENAI_MODEL = "gpt-4o"
+# gpt-4o handles tables (text reasoning) and images (vision).
+# gpt-4o-mini handles formulas and code — shorter context, cheaper, sufficient.
+OPENAI_MODEL      = "gpt-4o"
+OPENAI_MINI_MODEL = "gpt-4o-mini"
 
-# Image rendering scale factor
-# PDF images are rendered at 72 DPI by default (low quality)
-# Scale × 3 = 216 DPI (high enough for GPT-4 to read chart text)
-# Higher values = better quality but larger files and slower processing
+# Docling renders page images at 72 DPI × IMAGE_SCALE.
+# 3.0 → 216 DPI: fine enough for GPT-4o Vision to read axis labels, small
+# table text, and formula notation without compression artefacts.
 IMAGE_SCALE = 3.0
 
+# Per-call timeout for every OpenAI API request (seconds).
+# Clinical PDFs can have large tables that produce long prompts;
+# 60 s gives the model enough time without hanging the pipeline indefinitely.
+OPENAI_TIMEOUT = 60
 
-# =============================================================================
-# BOUNDARY MARKERS
-# =============================================================================
+# Maximum number of retry attempts on RateLimitError before giving up.
+# Back-off: 2^attempt seconds  (1 s, 2 s, 4 s).
+MAX_RETRIES = 3
+
+# Code blocks shorter than this threshold are emitted as-is — their raw
+# keyword tokens embed adequately in vector space.  Longer blocks (PK models,
+# SAS macros, full stat scripts) need a plain-language description because
+# users search "mixed-effects model" not "lme4::lmer(response ~ …)".
+CODE_DESCRIPTION_MIN_LEN = 200
+
+
+# ==============================================================================
+# NOISE-FILTERING LABELS
+# ==============================================================================
 #
-# Boundary markers are the SECRET SAUCE of this extraction system!
+# Docling's ML layout model assigns DocItemLabel.PAGE_HEADER and PAGE_FOOTER
+# to repeating page-level boilerplate: running headers such as
+# "Protocol MK-3475 Amendment 5 Confidential", page numbers, footer text.
 #
-# They solve a critical problem in RAG pipelines:
-# "How do we know where each semantic unit (paragraph, table, image) begins
-#  and ends in the Markdown output?"
+# These are discarded at the dispatch level — no regex, no keyword matching.
+# Works on any PDF, any domain, any language; Docling's model did the work.
 #
-# Without boundaries:
-#   ## Introduction
-#   The company reported strong results.
-#   | Revenue | 2024 |
-#   | Q1 | $125M |
-#   The next paragraph starts here.
+_SKIP_LABELS: frozenset = frozenset({
+    DocItemLabel.PAGE_HEADER,
+    DocItemLabel.PAGE_FOOTER,
+})
+
+
+# ==============================================================================
+# AI ENRICHMENT PROMPTS
+# ==============================================================================
 #
-#   Problem: Where does the table end? Where does the paragraph start?
-#   A chunker would have to parse Markdown to figure it out!
+# Design principles:
+#   1. Explicit dimension labels force the model to cover every required aspect.
+#      Without them the model produces 2-sentence summaries.
+#   2. Minimum character targets are stated in the prompt AND enforced by
+#      _enforce_length() after the call — belt-and-suspenders.
+#   3. "Do NOT reproduce the raw content" prevents the model from simply
+#      copying the input, which would waste tokens and produce useless embeddings.
+#   4. AI descriptions are stored as boundary attributes, never in raw content,
+#      so Stage 2 can choose independently what to put in the VDB.
 #
-# With boundaries:
-#   ## Introduction
-#   <!-- BOUNDARY_START type="paragraph" id="p1_text_1" page="1" -->
-#   The company reported strong results.
-#   <!-- BOUNDARY_END type="paragraph" id="p1_text_1" -->
-#
-#   <!-- BOUNDARY_START type="table" id="p1_table_1" page="1" rows="4" -->
-#   | Revenue | 2024 |
-#   | Q1 | $125M |
-#   <!-- BOUNDARY_END type="table" id="p1_table_1" -->
-#
-#   <!-- BOUNDARY_START type="paragraph" id="p1_text_2" page="1" -->
-#   The next paragraph starts here.
-#   <!-- BOUNDARY_END type="paragraph" id="p1_text_2" -->
-#
-#   Solution: Chunker uses simple regex to extract any element!
-#   Pattern: <!-- BOUNDARY_START.*? --> ... <!-- BOUNDARY_END -->
-#
-# Benefits:
-# ✓ Precise extraction (no guessing where elements end)
-# ✓ Fast processing (regex vs full Markdown parser)
-# ✓ Rich metadata (element type, page, breadcrumbs all in the marker)
-# ✓ Debugging friendly (human-readable in raw .md files)
-#
-# =============================================================================
 
-def create_boundary_start(item_type: str, item_id: str, page: int, **attrs) -> str:
-    """
-    Build an opening boundary comment tag.
+_TABLE_PROMPT = """\
+You are an expert medical/clinical document analyst specialising in
+clinical-trial documentation and regulatory submissions.
 
-    This creates an HTML comment that marks the START of a semantic element.
-    HTML comments are invisible when Markdown is rendered, but parseable!
+Analyse the table below and write a DENSE, STRUCTURED description of
+EXACTLY 1500–3000 characters.
 
-    Format:
-    <!-- BOUNDARY_START type="table" id="p5_table_1" page="5" rows="8" columns="4" -->
+Cover ALL seven dimensions — omitting any one is a failure:
 
-    Args:
-        item_type: Element category
-            Examples: "paragraph", "table", "image", "header", "code"
-        item_id: Unique identifier for this element
-            Format: p{page}_{type}_{counter}
-            Example: "p3_text_2" = second text block on page 3
-        page: 1-based page number from the PDF
-        **attrs: Additional key=value pairs to embed in the tag
-            Examples:
-            - rows=8, columns=4 (for tables)
-            - language="python" (for code blocks)
-            - char_count=412, word_count=68 (for text)
-            - breadcrumbs="Results > Revenue" (for context)
+1. PURPOSE    — What clinical question does this table answer?
+                What endpoint, safety signal, or measurement does it present?
+2. STRUCTURE  — Name every column header, its unit of measurement, data type
+                (continuous, categorical, binary), and its analytical role.
+                Note any row groupings, subgroup strata, or hierarchical levels.
+3. FINDINGS   — The most important values, trends, and extremes.
+                Quote specific numbers, percentages, and time-points.
+4. STATISTICS — Report every p-value, confidence interval, odds ratio, hazard
+                ratio, relative risk, NNT, or significance flag present.
+5. COHORTS    — Identify every patient population, treatment arm, time-point,
+                subgroup, and N size represented.
+6. CAVEATS    — Note missing data, footnotes, abbreviations, and anything that
+                qualifies the interpretation of the findings.
+7. KEYWORDS   — List 12–15 precise clinical/statistical terms a physician or
+                data scientist would use when searching for this table.
 
-    Returns:
-        HTML comment string ready to insert in Markdown
+Formatting rules:
+  • Label each section exactly as shown above (e.g. "1. PURPOSE — …").
+  • Write in flowing prose within each section; no nested bullets.
+  • Do NOT reproduce the raw table — synthesise and interpret.
+  • Minimum 1500 characters total; responses below this are incomplete.
 
-    Example Output:
-    <!-- BOUNDARY_START type="paragraph" id="p3_text_2" page="3"
-         char_count="412" word_count="68" breadcrumbs="Results > Revenue" -->
+{caption_block}
+Table (Markdown):
+{table_markdown}
+"""
 
-    Why HTML comments?
-    - Invisible in rendered Markdown (doesn't clutter display)
-    - Easy to parse (simple regex or XML parser)
-    - Self-documenting (readable in raw .md files)
-    - Compatible with all Markdown renderers
-    """
-    # Build attribute string: type="paragraph" id="p3_text_2" page="3"
-    attr_str = f'type="{item_type}" id="{item_id}" page="{page}"'
+_IMAGE_PROMPT = """\
+You are an expert medical/clinical document analyst.
 
-    # Add any extra attributes passed via **attrs
-    # Example: rows=8, columns=4, language="python"
-    for key, value in attrs.items():
-        attr_str += f' {key}="{value}"'
+Analyse the figure and write a DENSE, STRUCTURED description of
+EXACTLY 1000–2000 characters.
 
-    # Wrap in HTML comment syntax
-    return f"<!-- BOUNDARY_START {attr_str} -->"
+Cover ALL six dimensions:
 
+1. FIGURE TYPE  — Identify the chart type precisely:
+                  (Kaplan-Meier curve, forest plot, waterfall plot, bar chart,
+                   scatter plot, study flowchart, dose-response curve, etc.)
+2. CONTENT      — Describe every axis (label, scale, units), every legend
+                  entry, every data series, and every visible annotation.
+3. KEY MESSAGE  — State the single most important clinical takeaway.
+4. DATA VALUES  — Quote specific numbers, percentages, time-points, medians,
+                  response thresholds, or hazard ratios visible in the figure.
+5. CONTEXT      — Explain how this figure relates to the surrounding document
+                  section (efficacy, safety, PK, study design, etc.).
+6. KEYWORDS     — List 10–12 precise search terms a clinician would use
+                  to find this figure.
 
-def create_boundary_end(item_type: str, item_id: str) -> str:
-    """
-    Build a closing boundary comment tag.
+Formatting rules:
+  • Label each section as shown above.
+  • Minimum 1000 characters total.
 
-    The END tag mirrors the START tag, allowing parsers to:
-    - Verify complete extraction (matched pair)
-    - Handle truncated files (detect missing END)
-    - Validate structure (ensure nesting is correct)
+{caption_block}
+"""
 
-    Format:
-    <!-- BOUNDARY_END type="table" id="p5_table_1" -->
+_FORMULA_PROMPT = """\
+You are an expert medical/scientific document analyst.
 
-    Args:
-        item_type: Same type as the START tag
-        item_id: Same ID as the START tag
+Interpret the formula below and write a concise structured description
+of 200–500 characters.
 
-    Returns:
-        HTML comment string
+Cover all three dimensions in a single flowing paragraph:
 
-    Why include type and id in END tag?
-    - Self-documenting (clear what's closing)
-    - Validation (ensure START/END match)
-    - Error detection (spot mismatched pairs)
+1. FORMULA TYPE  — What category of formula is this?
+                   (pharmacokinetic, bioequivalence criterion, statistical
+                    test, sample-size calculation, chemical equation, etc.)
+2. MEANING       — What does each symbol or variable represent?
+                   What quantity does the formula calculate or express?
+3. CLINICAL USE  — What analytical decision, regulatory requirement, or
+                   scientific measurement does this formula directly support?
 
-    Example Usage:
-    <!-- BOUNDARY_START type="table" id="p5_table_1" page="5" -->
-    | Col A | Col B |
-    | ----- | ----- |
-    | 1     | 2     |
-    <!-- BOUNDARY_END type="table" id="p5_table_1" -->
-    """
-    return f'<!-- BOUNDARY_END type="{item_type}" id="{item_id}" -->'
+Rules:
+  • Write as ONE flowing paragraph — no numbered list in the output.
+  • Do NOT reproduce the raw formula notation.
+  • Minimum 200 characters; maximum 500 characters.
 
+Formula:
+{formula_text}
+"""
 
-def wrap_with_boundaries(content: str, item_type: str, item_id: str,
-                         page: int, **attrs) -> str:
-    """
-    Convenience wrapper - sandwich content between START and END markers.
+_CODE_PROMPT = """\
+You are a medical/statistical programming expert.
 
-    This is the main function used by all element processors!
-    It combines create_boundary_start() and create_boundary_end() with
-    the actual content to produce a complete boundary-wrapped block.
+Explain the code block below in 200–500 characters.
 
-    Args:
-        content: The Markdown string to wrap
-            Example: "The company reported strong revenue growth."
-        item_type: Element category ("paragraph", "table", etc.)
-        item_id: Unique element ID (generated by generate_unique_id())
-        page: Page number
-        **attrs: Optional metadata attributes
+Cover all three dimensions in a single flowing paragraph:
 
-    Returns:
-        Multi-line string: START tag + content + END tag
+1. LANGUAGE/TYPE — What language or domain-specific tool is this?
+                   (R, Python, SAS, NONMEM, SQL, shell, pseudocode, etc.)
+2. PURPOSE       — What computation, statistical analysis, data transformation,
+                   or modelling task does this code perform?
+3. KEY ELEMENTS  — Which functions, libraries, statistical methods, or model
+                   specifications are most significant?
 
-    Special Handling:
-    - Filters out None-valued attrs (keeps tags clean)
-    - Adds newlines for readability
+Rules:
+  • Write as ONE flowing paragraph — no numbered list in the output.
+  • Do NOT reproduce any code.
+  • Minimum 200 characters; maximum 500 characters.
 
-    Example:
-    wrap_with_boundaries(
-        content="Revenue grew 23% in Q4.",
-        item_type="paragraph",
-        item_id="p3_text_2",
-        page=3,
-        char_count=25,
-        word_count=6,
-        breadcrumbs="Results > Revenue"
-    )
-
-    Returns:
-    <!-- BOUNDARY_START type="paragraph" id="p3_text_2" page="3"
-         char_count="25" word_count="6" breadcrumbs="Results > Revenue" -->
-    Revenue grew 23% in Q4.
-    <!-- BOUNDARY_END type="paragraph" id="p3_text_2" -->
-
-    Why filter None values?
-    attrs might contain optional fields like caption=None or language=None
-    We don't want these appearing as caption="None" in the output!
-    Example:
-    - Good: has_caption="yes"
-    - Bad:  has_caption="None" (misleading!)
-    - Solution: Drop None-valued attrs entirely
-    """
-    # Filter out attributes with None values
-    # Example: {caption: "Figure 1", language: None} → {caption: "Figure 1"}
-    filtered_attrs = {k: v for k, v in attrs.items() if v is not None}
-
-    # Create opening tag
-    start = create_boundary_start(item_type, item_id, page, **filtered_attrs)
-
-    # Create closing tag
-    end = create_boundary_end(item_type, item_id)
-
-    # Combine: START + newline + content + newline + END
-    return f"{start}\n{content}\n{end}"
+Code:
+{code_text}
+"""
 
 
-# =============================================================================
-# UNIQUE ID GENERATION
-# =============================================================================
-#
-# Every element in the extracted document needs a unique ID.
-#
-# WHY UNIQUE IDS?
-# ---------------
-# 1. Reference elements precisely
-#    "Show me p3_table_2" → exact table, no ambiguity
-#
-# 2. Track processing
-#    "Stage 2 failed on p5_image_3" → know exactly which element
-#
-# 3. Enable chunking
-#    "Create chunk from p3_text_2 through p3_text_5"
-#
-# 4. Debugging
-#    "The weird output is in p7_text_4" → easy to find in source PDF
-#
-# ID FORMAT
-# ---------
-# Pattern: p{page}_{type}_{counter}
-#
-# Examples:
-# - p1_header_1  : First header on page 1
-# - p3_text_2    : Second text block on page 3
-# - p5_table_1   : First table on page 5
-# - p7_image_3   : Third image on page 7
-#
-# Why this format?
-# ✓ Human-readable (not random UUIDs)
-# ✓ Sortable (alphabetical order = document order)
-# ✓ Meaningful (includes page and type info)
-# ✓ Short (easy to reference in logs)
-#
-# Counter Strategy:
-# - Separate counter per (page, type) combination
-# - page 1 text: p1_text_1, p1_text_2, p1_text_3
-# - page 1 tables: p1_table_1, p1_table_2
-# - page 2 text: p2_text_1, p2_text_2  (counter resets per page!)
-#
-# This makes IDs match the visual structure of the PDF!
-#
-# =============================================================================
+# ==============================================================================
+# ID MANAGEMENT
+# ==============================================================================
 
-# Module-level counter dictionary
-# Key format: "p{page}_{type}"
-# Value: current counter for that (page, type) pair
-#
-# Example state after processing page 3:
-# {
-#   "p3_header": 2,  # 2 headers on page 3
-#   "p3_text": 5,    # 5 text blocks on page 3
-#   "p3_table": 1,   # 1 table on page 3
-#   "p3_image": 3    # 3 images on page 3
-# }
-_id_counters = defaultdict(int)
+# Module-level counter dict — one set of counters per process.
+# reset_id_counters() is called at the start of every document so IDs
+# are unique within a document but may repeat across documents in the
+# same process (that is fine — they are scoped by doc_id in S3 keys).
+_id_counters: Dict[str, int] = defaultdict(int)
 
 
 def generate_unique_id(page: int, item_type: str) -> str:
     """
-    Generate a unique, human-readable element ID for the current document.
+    Generate a deterministic, page-scoped ID for a boundary marker.
 
-    This function is called by EVERY element processor!
-    Each call increments the counter for that (page, type) pair.
+    Format:  p{page}_{type}_{counter}
+    Example: p3_table_1, p3_table_2, p5_image_1
 
-    Args:
-        page: Page number (1-based)
-        item_type: Element type
-            Examples: "header", "text", "table", "image", "code", "list"
-
-    Returns:
-        Unique ID string
-        Format: p{page}_{type}_{counter}
-        Example: "p3_text_2"
-
-    How It Works:
-    1. Build counter key: f"p{page}_{item_type}"
-       Example: "p3_text"
-
-    2. Increment counter for that key
-       First call: _id_counters["p3_text"] = 1
-       Second call: _id_counters["p3_text"] = 2
-       Third call: _id_counters["p3_text"] = 3
-
-    3. Return formatted ID
-       "p3_text_1", "p3_text_2", "p3_text_3"
-
-    Example Sequence (processing page 3):
-    generate_unique_id(3, "header") → "p3_header_1"
-    generate_unique_id(3, "text")   → "p3_text_1"
-    generate_unique_id(3, "text")   → "p3_text_2"
-    generate_unique_id(3, "table")  → "p3_table_1"
-    generate_unique_id(3, "text")   → "p3_text_3"
-
-    Why defaultdict(int)?
-    - First access to any key returns 0 (default for int)
-    - No need to check "if key in dict" before incrementing
-    - Clean, concise code
-
-    Thread Safety Note:
-    This function is NOT thread-safe (uses shared global state).
-    That's OK because we process PDFs sequentially, not in parallel.
-    If we ever parallelize, we'd need per-document counter dicts.
+    Counter is per (page, type) pair so IDs are short and human-readable
+    in the .md file.  Reset between documents by reset_id_counters().
     """
-    # Build counter key: "p{page}_{type}"
     key = f"p{page}_{item_type}"
-
-    # Increment counter for this (page, type) pair
-    # defaultdict(int) means first access returns 0, then we increment to 1
     _id_counters[key] += 1
-
-    # Return formatted ID: "p3_text_2"
     return f"{key}_{_id_counters[key]}"
 
 
-def reset_id_counters():
+def reset_id_counters() -> None:
     """
-    Reset all ID counters to zero.
+    Reset all ID counters.
 
-    CRITICAL: Must be called at the start of each PDF!
-
-    Why?
-    When processing multiple PDFs in batch mode, counters persist across
-    documents unless explicitly reset. This would cause IDs from document 2
-    to start at weird numbers (wherever document 1 left off).
-
-    Example Without Reset:
-    Document 1: p1_text_1, p1_text_2, p1_text_3
-    Document 2: p1_text_4, p1_text_5, p1_text_6  ← BAD! Should start at 1
-
-    Example With Reset:
-    Document 1: p1_text_1, p1_text_2, p1_text_3
-    reset_id_counters()  ← Called here
-    Document 2: p1_text_1, p1_text_2, p1_text_3  ← GOOD! Starts fresh
-
-    When to call:
-    - At the start of process_pdf() (beginning of each PDF)
-    - NOT between pages (counters should persist across pages)
-    - NOT between elements (counters should increment within a page)
-
-    What it does:
-    - Clears the _id_counters dictionary
-    - Recreates it as empty defaultdict(int)
-    - Next call to generate_unique_id() starts from 1 again
+    Must be called at the start of each document to prevent IDs from a
+    previous document leaking into the current one within the same process.
     """
     global _id_counters
     _id_counters = defaultdict(int)
 
 
-# =============================================================================
-# DOCLING SETUP
-# =============================================================================
-#
-# Docling is IBM's PDF extraction library - the ENGINE of our pipeline!
-#
-# Why Docling vs alternatives?
-# ===========================
-#
-# PyPDF2:
-# ✗ Text extraction only
-# ✗ Poor table handling
-# ✗ No layout analysis
-# ✗ Can't extract images
-#
-# pdfplumber:
-# ✓ Better than PyPDF2
-# ✗ Rule-based (not ML)
-# ✗ Table extraction often fails
-# ~ Image extraction limited
-#
-# Docling:
-# ✓ ML-based layout analysis (understands document structure)
-# ✓ TableFormer for accurate table extraction
-# ✓ Image extraction with high-quality rendering
-# ✓ Open source (no vendor lock-in)
-# ✓ Actively maintained by IBM Research
-#
-# Key Docling Features:
-# ---------------------
-# 1. Layout Analysis: Detects headers, paragraphs, tables, images
-# 2. Table Structure: ML model preserves row/column relationships
-# 3. Image Rendering: Exports figures as high-quality PNG files
-# 4. Provenance Tracking: Knows which page each element came from
-#
-# =============================================================================
+# ==============================================================================
+# BOUNDARY MARKER UTILITIES
+# ==============================================================================
 
-def create_docling_converter():
+def _escape_attr(value) -> str:
     """
-    Construct and return a Docling DocumentConverter configured for
-    high-quality PDF extraction.
+    Encode a value for safe embedding as an HTML comment attribute.
 
-    This function sets up ALL the configuration for how Docling will
-    process PDFs. Each setting is carefully chosen for best results!
+    Two transforms applied in order:
+      1. Collapse all newline variants (\\r\\n, \\r, \\n) to a single space.
+         Boundary markers are parsed line-by-line; a multi-line attribute
+         value would split the opening comment tag across lines and break
+         the regex parser in Stage 2.
+      2. HTML-escape double-quotes: " → &quot;
+         GPT-4o output routinely contains quoted clinical terms such as
+         "intent-to-treat", column names like "p-value", or abbreviations
+         like "CI (95%)".  A raw " inside an attribute value would close
+         the attribute early, silently truncating the AI description.
+
+    Stage 2 (comprehensive_chunker.py) calls html.unescape() after
+    extracting attribute values to reverse both transforms.
+    """
+    s = str(value).replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ')
+    return html.escape(s)
+
+
+def _build_attr_string(item_type: str, item_id: str, page: int,
+                        attrs: Dict) -> str:
+    """
+    Assemble the full attribute string for a BOUNDARY_START comment.
+
+    type, id, and page are always written first (in that order) so the
+    Stage 2 parser can rely on their position for fast extraction.
+    Additional attrs follow in insertion order.
+    None-valued attrs are dropped — writing 'None' as a string would
+    corrupt downstream parsing.
+    """
+    parts = [
+        f'type="{item_type}"',
+        f'id="{item_id}"',
+        f'page="{page}"',
+    ]
+    for k, v in attrs.items():
+        if v is not None:
+            parts.append(f'{k}="{_escape_attr(v)}"')
+    return " ".join(parts)
+
+
+def wrap_with_boundaries(content: str, item_type: str,
+                          item_id: str, page: int, **attrs) -> str:
+    """
+    Wrap raw content between deterministic HTML-comment boundary markers.
+
+    The opening marker encodes all structural metadata as escaped attributes.
+    The closing marker carries only type and id for lightweight parsing.
+
+    Example output:
+      <!-- BOUNDARY_START type="paragraph" id="p2_text_1" page="2"
+           char_count="312" breadcrumbs="Methods &gt; Study Design" -->
+      The study enrolled patients aged 18–75…
+      <!-- BOUNDARY_END type="paragraph" id="p2_text_1" -->
+    """
+    attr_string = _build_attr_string(item_type, item_id, page, attrs)
+    start = f"<!-- BOUNDARY_START {attr_string} -->"
+    end   = f'<!-- BOUNDARY_END type="{item_type}" id="{item_id}" -->'
+    return f"{start}\n{content}\n{end}"
+
+
+# ==============================================================================
+# S3 UPLOAD
+# ==============================================================================
+
+def upload_to_s3(s3_client, bucket: str, key: str,
+                 body: bytes, content_type: str) -> str:
+    """
+    Upload a byte payload to S3 and return the canonical s3:// URI.
+
+    Raises on any failure — all call-sites wrap in try/except so a single
+    failed upload stores an empty s3_uri in the boundary attr rather than
+    crashing the entire document pipeline.
+
+    Args:
+        s3_client    : boto3 S3 client
+        bucket       : S3 bucket name
+        key          : object key (path within the bucket)
+        body         : raw bytes to upload
+        content_type : MIME type for the Content-Type header
 
     Returns:
-        Configured DocumentConverter instance ready to process PDFs
-
-    Configuration Decisions:
-    =======================
-
-    1. images_scale = 3.0 (216 DPI)
-       Why?
-       - Default: 72 DPI (too low for GPT-4 to read chart text)
-       - Our setting: 216 DPI (3× higher, GPT-4 can read text clearly)
-       - Tradeoff: Larger files but better AI analysis
-
-    2. generate_picture_images = True
-       Why?
-       - Saves figures as PNG files for AI analysis
-       - Required for GPT-4 Vision to describe images
-       - Without this: Would lose all visual content!
-
-    3. generate_table_images = True
-       Why?
-       - Fallback for complex tables that can't be text-exported
-       - Merged cells, nested tables → need image
-       - Provides backup if TableFormer fails
-
-    4. do_ocr = False
-       Why?
-       - Assumes PDF has embedded text (most modern PDFs do)
-       - OCR is slow and error-prone
-       - For scanned PDFs: Set to True
-
-    5. do_table_structure = True
-       Why?
-       - Enables TableFormer ML model (the secret sauce!)
-       - Without this: Tables become jumbled text
-       - With this: Tables preserve row/column structure
-
-    6. TableFormerMode.ACCURATE
-       Why?
-       - Two modes: FAST vs ACCURATE
-       - FAST: ~2× faster but lower quality
-       - ACCURATE: Slower but significantly better for complex tables
-       - For RAG: Accuracy > speed (we process once, query many times)
-
-    Example Configuration Comparison:
-
-    Low Quality (PyPDF2 equivalent):
-    - images_scale = 1.0
-    - do_table_structure = False
-    - Result: Garbled tables, low-res images
-
-    Our Configuration:
-    - images_scale = 3.0
-    - TableFormerMode.ACCURATE
-    - Result: Clean tables, readable images for AI
-
-    Resource Usage:
-    - CPU: Moderate (TableFormer uses ML)
-    - Memory: ~1-2GB per PDF (depends on size)
-    - Time: ~30-60 seconds per PDF
+        "s3://{bucket}/{key}"
     """
-    # ========================================================================
-    # CREATE PIPELINE OPTIONS
-    # ========================================================================
-    # PdfPipelineOptions controls HOW Docling processes PDFs
-    # Think of it as the "settings menu" for PDF extraction
-    # ========================================================================
-    pipeline_options = PdfPipelineOptions()
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=body,
+        ContentType=content_type,
+    )
+    uri = f"s3://{bucket}/{key}"
+    logger.info("S3 upload  ✓  %s  (%d bytes)", uri, len(body))
+    return uri
 
-    # ------------------------------------------------------------------------
-    # IMAGE RENDERING QUALITY
-    # ------------------------------------------------------------------------
-    # Scale factor for rendering images from PDF
-    #
-    # Math:
-    # - PDF default: 72 DPI
-    # - Our setting: 72 × 3.0 = 216 DPI
-    # - 216 DPI is high enough for GPT-4 to read chart labels
-    #
-    # Why not higher?
-    # - 300 DPI (4.2×) → huge files, negligible quality gain for AI
-    # - 216 DPI is sweet spot: readable + reasonable file size
-    # ------------------------------------------------------------------------
-    pipeline_options.images_scale = IMAGE_SCALE
 
-    # ------------------------------------------------------------------------
-    # IMAGE GENERATION FLAGS
-    # ------------------------------------------------------------------------
-    # Tell Docling to actually save image files (not just detect them)
-    #
-    # generate_picture_images = True:
-    #   Saves figures/charts as PNG files
-    #   Required for GPT-4 Vision analysis
-    #
-    # generate_table_images = True:
-    #   Saves tables as PNG files (fallback)
-    #   Used when text export fails (complex merged cells, etc.)
-    # ------------------------------------------------------------------------
-    pipeline_options.generate_picture_images = True
-    pipeline_options.generate_table_images = True
+# ==============================================================================
+# DOCLING CONVERTER FACTORY
+# ==============================================================================
 
-    # ------------------------------------------------------------------------
-    # OCR SETTINGS
-    # ------------------------------------------------------------------------
-    # do_ocr = False means:
-    #   "Assume the PDF has embedded text (most PDFs do)"
-    #   "Don't waste time running OCR"
-    #
-    # When to set do_ocr = True:
-    # - Scanned documents (image of paper)
-    # - Photos of documents
-    # - PDFs created from screenshots
-    #
-    # Why False for our use case:
-    # - Clinical trial PDFs are computer-generated (have text)
-    # - OCR is slow (~5× slower than text extraction)
-    # - OCR can introduce errors (misread characters)
-    # ------------------------------------------------------------------------
-    pipeline_options.do_ocr = False
+def create_docling_converter() -> DocumentConverter:
+    """
+    Build and return a configured Docling DocumentConverter.
 
-    # ------------------------------------------------------------------------
-    # TABLE EXTRACTION SETTINGS
-    # ------------------------------------------------------------------------
-    # do_table_structure = True:
-    #   Enable TableFormer (Docling's ML table parser)
-    #   This is the KEY FEATURE that makes Docling great!
-    #
-    # TableFormer is a machine learning model trained to:
-    # - Detect table boundaries
-    # - Identify rows and columns
-    # - Handle merged cells
-    # - Preserve table structure
-    #
-    # Without this:
-    # | Name | Age | City |
-    # |------|-----|------|
-    # | Alice| 30  | NYC  |
-    # | Bob  | 25  | LA   |
-    #
-    # Becomes: "Name Age City Alice 30 NYC Bob 25 LA" (useless!)
-    #
-    # With this:
-    # Clean pandas DataFrame with proper rows/columns! ✓
-    # ------------------------------------------------------------------------
-    pipeline_options.do_table_structure = True
+    Pipeline settings:
+      • TABLE_FORMER ACCURATE mode  — highest-fidelity table structure
+        recognition; slower than FAST but essential for clinical tables with
+        merged cells, multi-level headers, and footnote rows.
+      • generate_picture_images = True  — Docling renders each PictureItem
+        to a PIL Image object accessible via item.get_image(doc).
+      • generate_table_images = True    — enables image fallback for tables
+        whose structure cannot be exported to a DataFrame.
+      • images_scale = IMAGE_SCALE     — 3× = 216 DPI; legible for GPT-4o
+        Vision without making payload sizes unmanageable.
+      • do_ocr = False                 — assumes born-digital PDFs.
+        Set True for scanned documents (significantly slower).
+    """
+    pipeline_opts = PdfPipelineOptions()
+    pipeline_opts.images_scale            = IMAGE_SCALE
+    pipeline_opts.generate_picture_images = True
+    pipeline_opts.generate_table_images   = True
+    pipeline_opts.do_ocr                  = False
+    pipeline_opts.do_table_structure      = True
+    pipeline_opts.table_structure_options.mode = TableFormerMode.ACCURATE
 
-    # TableFormer Quality Mode:
-    # - FAST: Quick processing, decent quality
-    # - ACCURATE: Slower but much better quality
-    #
-    # For RAG pipelines:
-    # - We process documents ONCE
-    # - We query them MANY times
-    # - Quality > speed (better to wait 2× longer for 10× better results)
-    #
-    # ACCURATE mode handles:
-    # - Complex merged cells
-    # - Multi-row headers
-    # - Nested tables
-    # - Irregular table layouts
-    # ------------------------------------------------------------------------
-    pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
-
-    # ========================================================================
-    # CREATE DOCUMENT CONVERTER
-    # ========================================================================
-    # DocumentConverter is the main Docling class that processes PDFs
-    # We configure it with our carefully chosen options above
-    # ========================================================================
     return DocumentConverter(
         format_options={
-            # Apply our pipeline options to PDF inputs
-            # (Docling also supports other formats like DOCX, but we only use PDF)
-            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_opts)
         }
     )
 
 
-# =============================================================================
-# AI DESCRIPTIONS
-# =============================================================================
-#
-# GPT-4o is used for TWO AI analysis tasks in our pipeline:
-#
-# 1. TABLE DESCRIPTION
-#    Input:  Markdown table text
-#    Output: Analysis of purpose, structure, key insights
-#    Why:    Tables are data-dense, AI extracts meaning
-#    Cost:   Cheap (text-only, ~150 tokens)
-#
-# 2. IMAGE DESCRIPTION
-#    Input:  PNG image (base64-encoded)
-#    Output: Visual analysis (chart type, trends, insights)
-#    Why:    Charts are visual, need Vision model
-#    Cost:   More expensive (image tokens + text)
-#
-# Why AI Descriptions?
-# ===================
-# RAG works by semantic search - finding relevant chunks.
-# Without AI:
-#   Query: "revenue growth trends"
-#   Table: | Q1 | Q2 | Q3 | Q4 |
-#          | $100M | $110M | $125M | $140M |
-#   Match: NO (query words not in table!)
-#
-# With AI:
-#   AI Description: "Quarterly revenue showing strong growth trend,
-#                     from $100M in Q1 to $140M in Q4, 40% increase"
-#   Match: YES! (semantic match with "revenue growth trends")
-#
-# Cost Optimization:
-# =================
-# We keep costs low by:
-# - max_tokens=150 for tables (short descriptions)
-# - max_tokens=200 for images (slightly longer for visual analysis)
-# - Text-first strategy for tables (cheaper than vision)
-#
-# Error Handling:
-# ==============
-# AI calls can fail (rate limits, network errors, API issues)
-# We NEVER let AI failures break the pipeline!
-# - Catch all exceptions
-# - Return placeholder description
-# - Pipeline continues, document still gets extracted
-#
-# =============================================================================
+# ==============================================================================
+# ASYNC RETRY WRAPPER
+# ==============================================================================
 
-def describe_table_with_ai(table_text: str, openai_client, caption: str = None) -> str:
+async def _call_with_retry(fn, label: str = "OpenAI"):
     """
-    Ask GPT-4o to describe a table's purpose, structure, and key takeaways.
+    Execute an async callable with exponential back-off on RateLimitError.
 
-    This function sends the table as MARKDOWN TEXT (not an image!)
-    Why text vs image?
-    ✓ Cheaper (text tokens < image tokens)
-    ✓ Faster (no image rendering needed)
-    ✓ Lossless (exact cell values preserved)
-    ✓ Better for structured data (AI sees actual numbers)
+    Retries up to MAX_RETRIES times.  On each RateLimitError the coroutine
+    sleeps for 2^attempt seconds (1 s, 2 s, 4 s) before retrying.
+    Any non-rate-limit exception propagates immediately — callers handle it.
 
     Args:
-        table_text: Markdown-formatted table string
-            Example:
-            | Revenue | Q1    | Q2    | Q3    | Q4    |
-            |---------|-------|-------|-------|-------|
-            | 2024    | $100M | $110M | $125M | $140M |
-
-        openai_client: Initialized OpenAI client instance
-
-        caption: Optional caption text for context
-            Example: "Exhibit 3: Quarterly Revenue FY2024"
-            Including caption helps AI understand what table represents
+        fn    : zero-argument async callable that performs the OpenAI call
+        label : human-readable label for log messages (table id, image name…)
 
     Returns:
-        AI-generated description string, or error message on failure
+        The return value of fn() on success.
 
-    Example Output:
-    "This table shows quarterly revenue progression for 2024,
-     demonstrating consistent growth from $100M in Q1 to $140M in Q4,
-     representing a 40% increase over the year."
-
-    Prompt Engineering:
-    ==================
-    Our prompt asks for:
-    1. Purpose: What is this table showing?
-    2. Structure: How is the data organized?
-    3. Key information: What are the important takeaways?
-
-    Why concise?
-    - Keeps token costs down (max_tokens=150)
-    - Fits nicely in RAG chunk metadata
-    - Highlights most important insights
-
-    Cost Calculation:
-    ================
-    GPT-4o pricing (as of 2024):
-    - Input: $2.50 per 1M tokens
-    - Output: $10 per 1M tokens
-
-    Typical table:
-    - Input: ~200 tokens (prompt + table)
-    - Output: ~100 tokens (description)
-    - Cost: (200 × $2.50 + 100 × $10) / 1M = $0.0015
-
-    100 tables = $0.15 (cheap!)
+    Raises:
+        RuntimeError if all retry attempts are exhausted.
+        Any non-RateLimitError exception from fn().
     """
-    try:
-        # ====================================================================
-        # BUILD PROMPT
-        # ====================================================================
-        # Clear, specific instructions get better results
-        # We ask for: purpose, structure, key information (all in one)
-        # ====================================================================
-        prompt = "Analyze this table. Describe its purpose, structure, and key information concisely."
+    for attempt in range(MAX_RETRIES):
+        try:
+            return await fn()
+        except RateLimitError:
+            wait = 2 ** attempt   # 1 s, 2 s, 4 s
+            logger.warning(
+                "%s  rate-limited on attempt %d/%d — retrying in %ds",
+                label, attempt + 1, MAX_RETRIES, wait,
+            )
+            await asyncio.sleep(wait)
 
-        # ====================================================================
-        # ADD CAPTION IF AVAILABLE
-        # ====================================================================
-        # Captions provide valuable context!
-        # Example: "Exhibit 3: Revenue by Region FY2024"
-        # This helps AI understand that table shows regional breakdown
-        # ====================================================================
-        if caption:
-            prompt += f"\n\nCaption: {caption}"
+    raise RuntimeError(
+        f"{label}: all {MAX_RETRIES} retry attempts exhausted (rate limit)"
+    )
 
-        # Add the actual table text
-        prompt += f"\n\nTable:\n{table_text}"
 
-        # ====================================================================
-        # CALL OPENAI API
-        # ====================================================================
-        # chat.completions.create is the main API call
-        # We use gpt-4o (has best reasoning for analysis)
-        # ====================================================================
-        response = openai_client.chat.completions.create(
+def _enforce_length(text: str, min_chars: int, max_chars: int,
+                    label: str = "") -> str:
+    """
+    Validate and optionally truncate an AI response.
+
+    Logs a warning when the response is below the minimum (the model
+    produced a cursory summary despite the prompt instruction).
+    Truncates hard at max_chars — defensive guard against runaway output.
+
+    Args:
+        text      : raw AI response string
+        min_chars : expected minimum length from the prompt specification
+        max_chars : hard upper bound
+        label     : context string for log messages
+
+    Returns:
+        The (possibly truncated) text.
+    """
+    if len(text) < min_chars:
+        logger.warning(
+            "AI response shorter than requested  label=%s  got=%d  min=%d",
+            label, len(text), min_chars,
+        )
+    if len(text) > max_chars:
+        logger.info(
+            "AI response truncated  label=%s  from=%d  to=%d",
+            label, len(text), max_chars,
+        )
+        text = text[:max_chars]
+    return text
+
+
+# ==============================================================================
+# ASYNC AI ENRICHMENT FUNCTIONS
+# ==============================================================================
+
+async def describe_table_with_ai(
+    table_markdown: str,
+    client: AsyncOpenAI,
+    caption: Optional[str] = None,
+    label: str = "table",
+) -> str:
+    """
+    Generate a structured 1500–3000-char analytical narrative for a table.
+
+    Uses gpt-4o (text-only — no image needed for Markdown tables).
+    The system message reinforces the length requirement independently of
+    the user prompt as a second enforcement layer.
+
+    Result is stored as the boundary attribute ai_description="…",
+    NEVER embedded in the raw table content.  This keeps the S3-stored
+    content clean and lets Stage 2 choose independently which representation
+    to place in the VDB (raw table for small tables, ai_description for large).
+
+    Args:
+        table_markdown : Markdown-formatted table string from pandas
+        client         : AsyncOpenAI client instance
+        caption        : optional caption text extracted from the PDF
+        label          : ID string used in log and error messages
+
+    Returns:
+        Structured description string, or a stub on failure.
+    """
+    caption_block = f"Caption: {caption}\n\n" if caption else ""
+    prompt = _TABLE_PROMPT.format(
+        caption_block=caption_block,
+        table_markdown=table_markdown,
+    )
+
+    async def _call():
+        return await client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=150   # Keep descriptions short to control costs
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a medical document analyst specialising in "
+                        "clinical-trial and regulatory documentation. "
+                        "Always write descriptions of exactly 1500–3000 characters."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=1024,
+            timeout=OPENAI_TIMEOUT,
         )
 
-        # Extract text from response
-        return response.choices[0].message.content
-
-    except Exception as e:
-        # ====================================================================
-        # ERROR HANDLING
-        # ====================================================================
-        # AI call failed! Don't crash the pipeline.
-        #
-        # Common failures:
-        # - Rate limit exceeded (429 error)
-        # - API key invalid (401 error)
-        # - Network timeout
-        # - Service temporarily down
-        #
-        # We return an error placeholder so:
-        # - Table still gets extracted
-        # - User knows AI failed
-        # - Pipeline continues
-        # ====================================================================
-        return f"AI description failed: {str(e)}"
+    try:
+        t0   = time.monotonic()
+        resp = await _call_with_retry(_call, label=label)
+        elapsed = time.monotonic() - t0
+        logger.info("Table AI  ✓  %s  %.1fs", label, elapsed)
+        result = resp.choices[0].message.content.strip()
+        return _enforce_length(result, 1200, 3200, label)
+    except Exception as exc:
+        logger.error("Table AI description failed  %s: %s", label, exc)
+        return f"AI description unavailable: {exc}"
 
 
-def describe_image_with_ai(image_path: Path, openai_client, caption: str = None) -> str:
+async def describe_image_with_ai(
+    image_path: Path,
+    client: AsyncOpenAI,
+    caption: Optional[str] = None,
+    label: str = "image",
+) -> str:
     """
-    Ask GPT-4o Vision to analyze a chart or figure image.
+    Generate a structured 1000–2000-char visual analysis of a figure.
 
-    This function uses GPT-4 VISION capability to understand visual content.
-    The image is base64-encoded and sent as a data URL.
+    Reads the PNG from disk, encodes it as base64, and sends it to
+    gpt-4o Vision at detail="high".  High detail is required for clinical
+    figures: forest plots with small confidence-interval bars, Kaplan-Meier
+    curves with multiple overlapping arms, and flowcharts with fine text.
 
-    Why base64 data URL instead of file upload?
-    ✓ Self-contained (everything in one API call)
-    ✓ No separate upload step
-    ✓ No expiring signed URLs
-    ✓ Works same in local dev and production
-    ✓ Simpler error handling
+    Result stored as boundary attribute ai_description="…".
 
     Args:
-        image_path: Path to the saved PNG file on disk
-            Example: /tmp/extracted/figures/fig_p3_2.png
-
-        openai_client: Initialized OpenAI client instance
-
-        caption: Optional caption text for additional context
-            Example: "Figure 2: Monthly Sales Trend 2024"
+        image_path : absolute path to the saved PNG file
+        client     : AsyncOpenAI client instance
+        caption    : optional caption text
+        label      : ID string for log messages
 
     Returns:
-        AI-generated visual analysis string, or error message on failure
-
-    Example Output:
-    "Line chart showing monthly sales from Jan-Dec 2024. Y-axis represents
-     revenue in millions, X-axis shows months. Clear upward trend visible,
-     with significant spike in Q4 (Nov-Dec). Sales grew from ~$10M to ~$25M."
-
-    Prompt Engineering:
-    ==================
-    Our prompt asks for:
-    1. Classification: What TYPE of visual? (Chart/Diagram/Data Table)
-    2. Structure: What are the axes? What's being measured?
-    3. Insights: What are the key trends or takeaways?
-
-    Why this structure?
-    - Type: Helps downstream filtering ("show me all bar charts")
-    - Structure: Provides context for search
-    - Insights: Captures semantic meaning for RAG
-
-    Base64 Encoding:
-    ===============
-    We need to convert the image file to base64 because:
-    - API expects data URL format: data:image/png;base64,{encoded_data}
-    - Can't send binary data directly in JSON
-    - Base64 is text-safe (works in JSON/HTTP)
-
-    Process:
-    1. Read image file as binary
-    2. Encode bytes to base64 string
-    3. Wrap in data URL format
-    4. Send to API
-
-    Cost Calculation:
-    ================
-    GPT-4o Vision pricing:
-    - Images charged by token count (varies by size)
-    - 216 DPI PNG ~= 1500 image tokens
-    - Plus ~100 text tokens (prompt + response)
-    - Total: ~1600 tokens per image
-    - Cost: ~$0.004 per image
-
-    100 images = $0.40 (reasonable!)
+        Structured visual description string, or stub on failure.
     """
-    try:
-        # ====================================================================
-        # READ AND ENCODE IMAGE
-        # ====================================================================
-        # Convert image file to base64 string for API
-        #
-        # Steps:
-        # 1. Open file in binary mode
-        # 2. Read all bytes
-        # 3. base64.b64encode() converts bytes to base64 bytes
-        # 4. .decode('utf-8') converts base64 bytes to string
-        # ====================================================================
-        with open(image_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode('utf-8')
+    caption_block = f"Caption: {caption}\n\n" if caption else ""
+    prompt = _IMAGE_PROMPT.format(caption_block=caption_block)
 
-        # ====================================================================
-        # BUILD PROMPT
-        # ====================================================================
-        # Ask for comprehensive visual analysis
-        # - Classification (what type of visual?)
-        # - Structure (axes, labels, components)
-        # - Insights (trends, patterns, takeaways)
-        # ====================================================================
-        prompt = "Analyze this visual. Is it a Chart, Diagram, or Data Table? "
-        prompt += "Describe the axes, trends, and key insights concisely."
+    # Read bytes synchronously — image files are small (< 5 MB at 216 DPI)
+    # and this avoids an aiofiles dependency.
+    with open(image_path, "rb") as fh:
+        b64_data = base64.b64encode(fh.read()).decode("utf-8")
 
-        # Add caption if available (provides context)
-        if caption:
-            prompt += f"\n\nCaption/Context: {caption}"
-
-        # ====================================================================
-        # CALL OPENAI VISION API
-        # ====================================================================
-        # The message content is a LIST containing:
-        # 1. Text part (the prompt)
-        # 2. Image part (the data URL)
-        #
-        # This multi-modal format lets GPT-4 see both text and image!
-        # ====================================================================
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,  # gpt-4o (has vision capability)
+    async def _call():
+        return await client.chat.completions.create(
+            model=OPENAI_MODEL,
             messages=[{
                 "role": "user",
                 "content": [
-                    # TEXT PART
                     {"type": "text", "text": prompt},
-
-                    # IMAGE PART
-                    # data URL format: data:{mime_type};base64,{encoded_bytes}
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/png;base64,{b64}"
-                    }}
-                ]
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            # PNG encoded as a data URI — no external URL needed.
+                            "url":    f"data:image/png;base64,{b64_data}",
+                            "detail": "high",
+                        },
+                    },
+                ],
             }],
-            max_tokens=200   # Slightly more than tables (visual analysis needs more detail)
+            max_tokens=900,
+            timeout=OPENAI_TIMEOUT,
         )
 
-        return response.choices[0].message.content
-
-    except Exception as e:
-        # ====================================================================
-        # ERROR HANDLING
-        # ====================================================================
-        # Vision API failures are handled gracefully
-        # Common issues:
-        # - Image too large (>20MB limit)
-        # - Invalid base64 encoding
-        # - Rate limit exceeded
-        # - Unsupported image format (WEBP, TIFF)
-        #
-        # We return error placeholder but keep processing
-        # ====================================================================
-        return f"AI description failed: {str(e)}"
+    try:
+        t0   = time.monotonic()
+        resp = await _call_with_retry(_call, label=label)
+        elapsed = time.monotonic() - t0
+        logger.info("Image AI  ✓  %s  %.1fs", label, elapsed)
+        result = resp.choices[0].message.content.strip()
+        return _enforce_length(result, 800, 2100, label)
+    except Exception as exc:
+        logger.error("Image AI description failed  %s: %s", label, exc)
+        return f"AI description unavailable: {exc}"
 
 
-# =============================================================================
-# IMAGE PROCESSING
-# =============================================================================
-#
-# This section handles extracting images from PDFs and getting AI descriptions.
-#
-# Why Separate from process_image() and process_table()?
-# ======================================================
-#
-# The same image extraction logic is used in TWO places:
-# 1. process_image() - for figures/charts
-# 2. process_table() - for tables that failed text export
-#
-# By centralizing extraction here, we:
-# ✓ Avoid code duplication
-# ✓ Ensure consistent behavior
-# ✓ Make testing easier (test once, works in both paths)
-# ✓ Simplify maintenance (fix bugs in one place)
-#
-# =============================================================================
-
-def extract_and_save_image(item, doc, page_num: int, output_dir: Path,
-                            image_counter: int, openai_client,
-                            caption: str = None, is_table: bool = False
-                           ) -> Optional[Tuple[str, str, str, str]]:
+async def describe_formula_with_ai(
+    formula_text: str,
+    client: AsyncOpenAI,
+    label: str = "formula",
+) -> str:
     """
-    Extract a Docling image/table item to a PNG file and get its AI description.
+    Generate a concise 200–500-char semantic interpretation of a formula.
 
-    This is a SHARED UTILITY used by both:
-    - process_image() : For regular figures/charts
-    - process_table() : For tables that failed text export (fallback)
+    Why formulas always receive descriptions:
+      Raw formula notation (LaTeX, Unicode math symbols, NONMEM syntax) produces
+      near-random vector embeddings because tokenisers split on symbols.
+      A user querying "pharmacokinetic elimination rate constant" will never
+      semantically match "ke = ln(2) / t½".  The description translates the
+      notation into searchable clinical language while the raw formula is
+      preserved in the boundary content for exact-match retrieval.
 
-    Flow:
-    1. Get image object from Docling item
-    2. Save as PNG file
-    3. Call AI to describe the image
-    4. Return filename, path, description, type
+    Uses gpt-4o-mini — formulas are short, no vision needed, cheaper.
 
     Args:
-        item: Docling PictureItem or TableItem
-            The source item to extract image from
-
-        doc: Parent Docling document
-            Needed by item.get_image() to access the PDF data
-
-        page_num: Page number for filename generation
-
-        output_dir: Document-level output directory
-            Example: /tmp/extracted/clinical_trial/
-            We'll save to: {output_dir}/figures/fig_p{page}_{counter}.png
-
-        image_counter: Current sequential counter for this page
-            Used in filename: fig_p3_2.png (second figure on page 3)
-
-        openai_client: Initialized OpenAI client for AI description
-
-        caption: Optional caption text for richer AI context
-            Example: "Figure 2: Monthly Sales Trend"
-
-        is_table: True if this is a table (not a regular image)
-            Affects:
-            - Type label: "Table/Chart" vs "Image"
-            - AI prompt context
+        formula_text : raw formula string as extracted by Docling
+        client       : AsyncOpenAI client instance
+        label        : ID string for log messages
 
     Returns:
-        Tuple of (filename, relative_filepath, ai_description, type_label)
-        Example: ("fig_p3_2.png", "figures/fig_p3_2.png",
-                  "Line chart showing...", "Image")
+        Plain-language description, or stub on failure.
+    """
+    prompt = _FORMULA_PROMPT.format(formula_text=formula_text)
 
-        Returns None if extraction fails (non-fatal)
+    async def _call():
+        return await client.chat.completions.create(
+            model=OPENAI_MINI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            timeout=OPENAI_TIMEOUT,
+        )
 
-    Why Return Tuple?
-    ================
-    We need multiple pieces of information from extraction:
-    - filename: For logging and Markdown image links
-    - relative_filepath: For correct links from pages/ subdirectory
-    - ai_description: For metadata and search
-    - type_label: "Image" vs "Table/Chart" (for classification)
+    try:
+        t0   = time.monotonic()
+        resp = await _call_with_retry(_call, label=label)
+        elapsed = time.monotonic() - t0
+        logger.info("Formula AI  ✓  %s  %.1fs", label, elapsed)
+        result = resp.choices[0].message.content.strip()
+        return _enforce_length(result, 150, 550, label)
+    except Exception as exc:
+        logger.error("Formula AI description failed  %s: %s", label, exc)
+        return f"AI description unavailable: {exc}"
 
-    Filename Convention:
-    ===================
-    Format: fig_p{page}_{counter}.png
 
-    Examples:
-    - fig_p1_1.png : First figure on page 1
-    - fig_p3_2.png : Second figure on page 3
-    - fig_p5_3.png : Third figure on page 5
+async def describe_code_with_ai(
+    code_text: str,
+    client: AsyncOpenAI,
+    label: str = "code",
+) -> str:
+    """
+    Generate a concise 200–500-char plain-language explanation of a code block.
 
-    Why this format?
-    ✓ Sortable (alphabetical = document order)
-    ✓ Page-specific (easy to locate in source PDF)
-    ✓ Sequential (unique within each page)
+    Only called for blocks exceeding CODE_DESCRIPTION_MIN_LEN (200) characters.
+    Short snippets (1–3 lines) embed adequately on their raw keyword tokens.
+    Long blocks such as full NONMEM control streams, multi-step SAS macros,
+    or PK/PD model definitions need a natural-language bridge because users
+    search "non-linear mixed effects PK model" not "$THETA (0.1)".
 
-    Error Handling:
-    ==============
-    Extraction can fail if:
-    - Docling can't render the image (corrupted PDF element)
-    - Image is encrypted or DRM-protected
-    - Disk space full
-    - Permission error writing file
+    Uses gpt-4o-mini — no vision, text-only, cheaper.
 
-    We return None on failure (non-fatal):
-    - Caller handles None gracefully
-    - Document still gets extracted (minus this image)
-    - Error is logged but doesn't crash pipeline
+    Args:
+        code_text : raw code string extracted by Docling
+        client    : AsyncOpenAI client instance
+        label     : ID string for log messages
+
+    Returns:
+        Plain-language explanation, or stub on failure.
+    """
+    prompt = _CODE_PROMPT.format(code_text=code_text)
+
+    async def _call():
+        return await client.chat.completions.create(
+            model=OPENAI_MINI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            timeout=OPENAI_TIMEOUT,
+        )
+
+    try:
+        t0   = time.monotonic()
+        resp = await _call_with_retry(_call, label=label)
+        elapsed = time.monotonic() - t0
+        logger.info("Code AI  ✓  %s  %.1fs", label, elapsed)
+        result = resp.choices[0].message.content.strip()
+        return _enforce_length(result, 150, 550, label)
+    except Exception as exc:
+        logger.error("Code AI description failed  %s: %s", label, exc)
+        return f"AI description unavailable: {exc}"
+
+
+# ==============================================================================
+# IMAGE / TABLE-AS-IMAGE EXTRACTION
+# ==============================================================================
+
+async def _extract_and_save_image(
+    item,
+    doc,
+    page_num: int,
+    output_dir: Path,
+    filename: str,
+    client: AsyncOpenAI,
+    s3_client,
+    s3_bucket: str,
+    doc_id: str,
+    caption: Optional[str],
+    is_table: bool,
+) -> Optional[Tuple[str, str, str, str]]:
+    """
+    Render a Docling item to PNG, save locally, upload to S3, describe with AI.
+
+    This function is the single shared rendering path used by both
+    process_image() and process_table() (image fallback).
+
+    Flow:
+      1. item.get_image(doc)   → PIL Image object from Docling
+      2. Save as PNG at 216 DPI to figures/{filename}
+      3. Upload PNG to  s3://{bucket}/{doc_id}/images/{filename}
+      4. Call describe_image_with_ai() for the 6-dimension visual analysis
+
+    PNG is used (not JPEG) because:
+      • Lossless — no compression artefacts on fine text, thin lines,
+        or low-contrast labels (common in clinical figures).
+      • GPT-4o Vision accuracy is measurably better on PNG for documents
+        with small axis labels and overlapping KM curve annotations.
+
+    Args:
+        item       : Docling PictureItem or TableItem
+        doc        : Docling Document object (needed for rendering)
+        page_num   : current page number (for logging / S3 key)
+        output_dir : local root for this document's output
+        filename   : pre-computed filename (e.g. "fig_p3_1.png")
+        client     : AsyncOpenAI client
+        s3_client  : boto3 S3 client (may be None for local-only runs)
+        s3_bucket  : S3 bucket name
+        doc_id     : document identifier used as S3 key prefix
+        caption    : caption text consumed from the adjacent CAPTION item
+        is_table   : True when this is a table rendered as an image (fallback)
+
+    Returns:
+        (filename, s3_uri, ai_description, type_label)  or  None on failure.
     """
     try:
-        # ====================================================================
-        # STEP 1: GET IMAGE OBJECT FROM DOCLING
-        # ====================================================================
-        # item.get_image(doc) renders the PDF element to a PIL Image object
-        # Returns None if rendering fails (corrupted, encrypted, etc.)
-        # ====================================================================
         img_obj = item.get_image(doc)
-
-        if not img_obj:
-            # Rendering failed - return None to signal "skip this image"
+        if img_obj is None:
+            logger.warning(
+                "get_image() returned None  page=%d  file=%s", page_num, filename
+            )
             return None
 
-        # ====================================================================
-        # STEP 2: GENERATE FILENAME
-        # ====================================================================
-        # Filename format: fig_p{page}_{counter}.png
-        # Example: fig_p3_2.png (second figure on page 3)
-        #
-        # Why include page in filename?
-        # - Easy to correlate with source PDF
-        # - Debugging: "The bad image is fig_p5_3" → check page 5
-        # ====================================================================
-        filename = f"fig_p{page_num}_{image_counter}.png"
+        # ── Save PNG locally ───────────────────────────────────────────────────
+        local_path = output_dir / "figures" / filename
+        img_obj.save(local_path)  # Docling image objects save as PNG by default
+        logger.debug("Saved image locally: %s", local_path)
 
-        # Build full path: {output_dir}/figures/{filename}
-        filepath = output_dir / "figures" / filename
+        # ── Upload PNG to S3 ───────────────────────────────────────────────────
+        # s3_uri is empty string if S3 is not configured.
+        # Stored as boundary attr; Stage 2 passes it through to chunk metadata.
+        s3_uri = ""
+        if s3_client and s3_bucket:
+            try:
+                s3_key = f"{doc_id}/images/{filename}"
+                s3_uri = upload_to_s3(
+                    s3_client, s3_bucket, s3_key,
+                    local_path.read_bytes(), "image/png",
+                )
+            except Exception as s3_exc:
+                # Non-fatal: the image is still locally available for AI description.
+                # The boundary attr will have an empty s3_uri; Stage 2 handles this.
+                logger.error(
+                    "S3 image upload failed  file=%s  error=%s", filename, s3_exc
+                )
 
-        # ====================================================================
-        # STEP 3: SAVE IMAGE TO DISK
-        # ====================================================================
-        # img_obj is a PIL Image object with a .save() method
-        # This writes the PNG file to disk
-        # ====================================================================
-        img_obj.save(filepath)
-
-        # ====================================================================
-        # STEP 4: GET AI DESCRIPTION
-        # ====================================================================
-        # Send the saved PNG to GPT-4 Vision for analysis
-        # Caption is included for additional context
-        # ====================================================================
-        ai_desc = describe_image_with_ai(filepath, openai_client, caption)
-
-        # ====================================================================
-        # STEP 5: DETERMINE TYPE LABEL
-        # ====================================================================
-        # Label the element based on what it is:
-        # - Regular image: "Image"
-        # - Table image: "Table/Chart" (more specific)
-        # ====================================================================
+        # ── Generate AI description ────────────────────────────────────────────
+        ai_desc    = await describe_image_with_ai(local_path, client, caption,
+                                                   label=filename)
         type_label = "Table/Chart" if is_table else "Image"
+        return filename, s3_uri, ai_desc, type_label
 
-        # ====================================================================
-        # STEP 6: BUILD RELATIVE PATH
-        # ====================================================================
-        # Markdown files are in pages/ subdirectory
-        # Images are in figures/ subdirectory
-        # We need relative path from pages/ to figures/:
-        #
-        # From:      output_dir/pages/page_1.md
-        # To:        output_dir/figures/fig_p1_1.png
-        # Relative:  ../figures/fig_p1_1.png
-        #
-        # This ensures image links work when viewing the Markdown!
-        # ====================================================================
-        relative_path = str(filepath.relative_to(output_dir))
-
-        # Return all the information as a tuple
-        return (filename, relative_path, ai_desc, type_label)
-
-    except Exception as e:
-        # ====================================================================
-        # ERROR HANDLING
-        # ====================================================================
-        # Non-fatal error - log and return None
-        # Caller will handle None by skipping this image
-        # Document processing continues
-        # ====================================================================
-        print(f"   WARNING: Image extraction failed: {str(e)}")
+    except Exception as exc:
+        logger.error(
+            "Image extraction failed  page=%d  file=%s  error=%s",
+            page_num, filename, exc,
+        )
         return None
 
 
-# =============================================================================
-# ITEM PROCESSORS
-# =============================================================================
-#
-# This section contains specialized processor functions for each Docling item type.
-#
-# The Processor Pattern:
-# ======================
-#
-# Each processor is a PURE FUNCTION that:
-# 1. Accepts a Docling item + context (page, breadcrumbs, etc.)
-# 2. Generates a unique ID for the element
-# 3. Formats the element as Markdown
-# 4. Wraps it in boundary markers
-# 5. Returns the boundary-wrapped string
-#
-# Processors we have:
-# - process_header()       : Section headers (##, ###, etc.)
-# - process_text()         : Regular paragraphs
-# - process_list()         : Bullet/numbered lists
-# - process_special_text() : Code blocks (detected via heuristics)
-# - process_image()        : Figures/charts
-# - process_table()        : Data tables (text-first, image-fallback)
-#
-# Why Pure Functions?
-# ==================
-# Pure functions are:
-# ✓ Easy to test (no side effects except _id_counters)
-# ✓ Easy to understand (input → output, no hidden state)
-# ✓ Easy to debug (can test each processor independently)
-# ✓ Easy to modify (change one without breaking others)
-#
-# All processors follow the same contract:
-# - Accept item + page + context
-# - Return boundary-wrapped Markdown string
-# - Return empty string or None to signal "skip"
-#
-# =============================================================================
+# ==============================================================================
+# ITEM PROCESSORS  (one per Docling element type)
+# ==============================================================================
 
-def process_header(item: SectionHeaderItem, page: int, level: int,
-                   breadcrumbs: List[str]) -> Tuple[str, List[str]]:
+def process_header(
+    item: SectionHeaderItem,
+    page: int,
+    level: int,
+    breadcrumbs: List[str],
+) -> Tuple[str, List[str]]:
     """
-    Convert a section header into a Markdown heading and update breadcrumb trail.
+    Process a section header and emit a Markdown heading with boundary markers.
 
-    BREADCRUMB TRAIL - THE SECRET SAUCE FOR CONTEXT!
-    ================================================
+    Breadcrumb trail update:
+      The breadcrumb list represents the current nesting path.
+      Before appending the new heading text, trim the list to the parent depth:
 
-    Breadcrumbs track WHERE WE ARE in the document hierarchy.
-    This is CRITICAL for RAG because it provides context!
+        level=1  →  breadcrumbs becomes [text]
+        level=2  →  breadcrumbs becomes [prev_level1, text]
+        level=3  →  breadcrumbs becomes [prev_1, prev_2, text]
 
-    Example Document Structure:
+      This means navigating from "Methods > Design" to a new level-1 heading
+      "Results" correctly resets the trail to ["Results"] rather than
+      producing "Methods > Design > Results".
 
-    # Financial Results              ← Level 1
-      ## Revenue                      ← Level 2
-        ### Q4 Performance            ← Level 3
-          Revenue grew 12%            ← Paragraph
-
-    Breadcrumb Trail:
-    ["Financial Results", "Revenue", "Q4 Performance"]
-
-    Now when we chunk "Revenue grew 12%", we know it's in:
-    Financial Results > Revenue > Q4 Performance
-
-    Without breadcrumbs:
-    Query: "Q4 revenue performance"
-    Chunk: "Revenue grew 12%"
-    Match: WEAK (missing context!)
-
-    With breadcrumbs:
-    Query: "Q4 revenue performance"
-    Chunk: "Revenue grew 12%"
-    Metadata: "Financial Results > Revenue > Q4 Performance"
-    Match: STRONG! ✓
-
-    How Breadcrumbs Work:
-    ====================
-
-    1. Start with empty list: []
-
-    2. See Level-1 header "Results":
-       Breadcrumbs = ["Results"]
-
-    3. See Level-2 header "Revenue":
-       Breadcrumbs = ["Results", "Revenue"]
-
-    4. See Level-2 header "Expenses" (same level as Revenue):
-       Truncate to level-1, then append:
-       Breadcrumbs = ["Results", "Expenses"]
-
-    5. See Level-3 header "Q4":
-       Breadcrumbs = ["Results", "Expenses", "Q4"]
-
-    This mirrors how a Table of Contents works!
+    Heading depth mapping:
+      Docling level 1 → ## (h2)  —  # (h1) is reserved for the document title
+      Docling level 2 → ###
+      Docling level N → {'#' * (N+1)}
 
     Args:
-        item: Docling SectionHeaderItem
-            Contains: .text (header text), .level (depth in hierarchy)
-
-        page: Current page number
-
-        level: Heading depth
-            1 = top-level chapter
-            2 = section
-            3 = subsection
-            etc.
-
-        breadcrumbs: Current document path (MUTABLE list!)
-            Example: ["Results", "Revenue"]
-            This list is MODIFIED in place!
+        item        : SectionHeaderItem from Docling
+        page        : current page number
+        level       : heading depth from doc.iterate_items()
+        breadcrumbs : mutable breadcrumb trail from the outer loop
 
     Returns:
-        Tuple of (wrapped_markdown, updated_breadcrumbs)
-
-        Example:
-        ("<!-- BOUNDARY_START ... -->
-## Revenue
-<!-- BOUNDARY_END ... -->",
-         ["Results", "Revenue"])
-
-    Markdown Heading Levels:
-    =======================
-
-    We use # for page title, so section headers start at ##:
-
-    Page:    # Page 3
-    Level 1: ## Introduction
-    Level 2: ### Background
-    Level 3: #### Methodology
-
-    Formula: '#' * (level + 1)
-    - level=1 → ## (two hashes)
-    - level=2 → ### (three hashes)
-    - level=3 → #### (four hashes)
+        (boundary-wrapped heading string, updated breadcrumbs list)
     """
-    # ========================================================================
-    # EXTRACT HEADER TEXT
-    # ========================================================================
     text = item.text.strip()
 
-    # ========================================================================
-    # UPDATE BREADCRUMB TRAIL
-    # ========================================================================
-    # Truncate breadcrumbs to parent level before adding new header
-    #
-    # Example:
-    # Current: ["Results", "Revenue", "Q4"]  (level 3)
-    # New header: "Expenses" (level 2)
-    #
-    # Step 1: Truncate to level 1 (parent of level 2)
-    #         breadcrumbs[:level-1] = breadcrumbs[:1] = ["Results"]
-    #
-    # Step 2: Append new header
-    #         breadcrumbs = ["Results", "Expenses"]
-    #
-    # This ensures breadcrumbs always reflect current hierarchy!
-    # ========================================================================
+    # Trim trail to parent depth, then append current heading.
     if len(breadcrumbs) >= level:
         breadcrumbs = breadcrumbs[:level - 1]
     breadcrumbs.append(text)
 
-    # ========================================================================
-    # GENERATE UNIQUE ID
-    # ========================================================================
-    item_id = generate_unique_id(page, "header")
+    # Heading markdown: level 1 → "## Heading", level 2 → "### Heading"
+    heading_md = f"{'#' * (level + 1)} {text}"
+    item_id    = generate_unique_id(page, "header")
 
-    # ========================================================================
-    # FORMAT AS MARKDOWN HEADING
-    # ========================================================================
-    # +1 to level because:
-    # - Level 0 would be # (page title)
-    # - Level 1 should be ## (top section)
-    # - Level 2 should be ### (subsection)
-    #
-    # Example: level=2 → '###' (3 hashes)
-    # ========================================================================
-    content = f"{'#' * (level + 1)} {text}"
-
-    # ========================================================================
-    # WRAP WITH BOUNDARIES
-    # ========================================================================
-    # Include level and breadcrumbs in metadata
-    # These help downstream processing understand document structure
-    # ========================================================================
     output = wrap_with_boundaries(
-        content, "header", item_id, page,
+        heading_md, "header", item_id, page,
         level=level,
-        breadcrumbs=" > ".join(breadcrumbs)  # "Results > Revenue > Q4"
+        breadcrumbs=" > ".join(breadcrumbs),
     )
-
     return output, breadcrumbs
 
 
-def process_text(item: TextItem, page: int, breadcrumbs: List[str]) -> str:
+def process_text(
+    item: TextItem,
+    page: int,
+    breadcrumbs: List[str],
+) -> str:
     """
-    Wrap a regular text paragraph in boundary markers with metadata.
+    Process a generic text element (paragraph, title, caption, footnote).
 
-    This is the MOST COMMON processor - handles normal paragraphs!
+    PAGE_HEADER and PAGE_FOOTER items are silently discarded here as a
+    second-line defence, even though the dispatch loop already skips them
+    by label.  This guards against Docling reclassifying a label in a
+    future release without breaking the pipeline.
 
-    What it does:
-    1. Extract text from Docling TextItem
-    2. Filter out noise (single-character fragments)
-    3. Count words and characters
-    4. Wrap in boundaries with metadata
+    Metadata stored in boundary attrs:
+      • char_count  — used by Stage 2 for target-size accumulation
+      • word_count  — diagnostic; not used by chunker logic
+      • breadcrumbs — critical for Stage 2 section-boundary detection
 
     Args:
-        item: Docling TextItem
-            Contains: .text (paragraph text)
-
-        page: Current page number
-
-        breadcrumbs: Current document path
-            Example: ["Results", "Revenue", "Q4"]
-            Provides context for this paragraph
+        item        : TextItem from Docling
+        page        : current page number
+        breadcrumbs : current breadcrumb trail
 
     Returns:
-        Boundary-wrapped Markdown string, or "" if text is too short
-
-    Metadata Included:
-    =================
-
-    char_count: Total characters
-        Why? Helps chunking strategies target specific sizes
-        Example: "Only include paragraphs with >200 chars"
-
-    word_count: Total words
-        Why? Another chunking dimension
-        Example: "Chunks should be ~300 words"
-
-    breadcrumbs: Current section path
-        Why? Provides semantic context for search
-        Example: Paragraph about "revenue" in "Q4 > Revenue" section
-
-    Filtering Strategy:
-    ==================
-
-    We skip very short text (≤1 character) because:
-    - OCR artifacts: Stray punctuation, dots, dashes
-    - Layout noise: Page numbers, decorative elements
-    - No semantic value: Can't be meaningfully searched
-
-    Examples of filtered content:
-    - "." (single period)
-    - "-" (decorative dash)
-    - "•" (bullet point without text)
-
-    These would clutter the output without adding value!
-
-    Example Output:
-    ==============
-
-    <!-- BOUNDARY_START type="paragraph" id="p3_text_2" page="3"
-         char_count="156" word_count="28"
-         breadcrumbs="Results > Revenue > Q4" -->
-    The company reported strong revenue growth in Q4 2024, with total
-    revenue reaching $125 million, representing a 23% increase over Q3
-    and exceeding analyst expectations.
-    <!-- BOUNDARY_END type="paragraph" id="p3_text_2" -->
+        Boundary-wrapped paragraph string, or empty string to skip.
     """
-    # ========================================================================
-    # EXTRACT AND CLEAN TEXT
-    # ========================================================================
+    # Belt-and-suspenders noise filter (primary filter is in the dispatch loop)
+    if item.label in _SKIP_LABELS:
+        return ""
+
     text = item.text.strip()
+    if not text:
+        return ""
 
-    # ========================================================================
-    # FILTER OUT NOISE
-    # ========================================================================
-    # Skip single characters - usually OCR artifacts or layout noise
-    # Example: ".", "-", "•", "1" (page number)
-    #
-    # Why ≤1 instead of ==1?
-    # - Also catches empty strings (len("")==0)
-    # - Defensive programming (handles edge cases)
-    # ========================================================================
-    if len(text) <= 1:
-        return ""  # Signal caller to skip this item
-
-    # ========================================================================
-    # GENERATE UNIQUE ID
-    # ========================================================================
     item_id = generate_unique_id(page, "text")
-
-    # ========================================================================
-    # WRAP WITH BOUNDARIES + METADATA
-    # ========================================================================
     return wrap_with_boundaries(
         text, "paragraph", item_id, page,
-        char_count=len(text),           # Total characters
-        word_count=len(text.split()),   # Simple word count (split on whitespace)
-        breadcrumbs=" > ".join(breadcrumbs)  # Section path
+        char_count=len(text),
+        word_count=len(text.split()),
+        breadcrumbs=" > ".join(breadcrumbs),
     )
 
 
-def process_list(item: ListItem, page: int, breadcrumbs: List[str]) -> str:
+def process_list(
+    item: ListItem,
+    page: int,
+    breadcrumbs: List[str],
+) -> str:
     """
-    Format a list item with its bullet marker and wrap in boundaries.
+    Process a list item and preserve its original marker.
 
-    Lists in PDFs can be:
-    - Unordered (bullets): •, -, *, ○
-    - Ordered (numbers): 1., 2., 3., etc.
-    - Custom markers: →, ✓, a), i., etc.
+    ListItem is a TextItem subclass — it MUST be dispatched before the
+    generic TextItem branch.  Routing via isinstance(item, TextItem) first
+    would produce a paragraph boundary with the marker character embedded
+    in the text, losing the structured list-item type.
 
-    Docling exposes the marker via item.enumeration attribute.
-    We preserve whatever marker the PDF used!
+    The enumeration marker (bullet "•", "-", or numeric "1.") comes from
+    Docling's layout model, not from text parsing.
 
     Args:
-        item: Docling ListItem
-            Contains: .text (list item text), .enumeration (bullet marker)
-
-        page: Current page number
-
-        breadcrumbs: Current document path
+        item        : ListItem from Docling
+        page        : current page number
+        breadcrumbs : current breadcrumb trail
 
     Returns:
-        Boundary-wrapped Markdown list item
-
-    Example PDFs and Their Markers:
-    ==============================
-
-    PDF Content:
-    • First item
-    • Second item
-
-    Docling ListItem:
-    - item.enumeration = "•"
-    - item.text = "First item"
-
-    Our Output:
-    • First item
-
-    ---
-
-    PDF Content:
-    1. First item
-    2. Second item
-
-    Docling ListItem:
-    - item.enumeration = "1."
-    - item.text = "First item"
-
-    Our Output:
-    1. First item
-
-    Fallback Strategy:
-    =================
-
-    If item.enumeration is not set (some PDFs don't have markers),
-    we default to "-" (standard Markdown bullet).
-
-    getattr(item, 'enumeration', '-') means:
-    - If item has enumeration attribute → use it
-    - If not → use '-' as default
-
-    This ensures output is always valid Markdown!
-
-    Why Preserve Original Markers?
-    =============================
-
-    Different marker types have semantic meaning:
-    - Bullets (•) : Related items
-    - Numbers (1.) : Sequential steps
-    - Checkboxes (☐) : Tasks/requirements
-
-    Preserving markers maintains the author's intent!
-
-    Example Output:
-    ==============
-
-    <!-- BOUNDARY_START type="list" id="p5_list_3" page="5"
-         breadcrumbs="Methodology > Data Collection" -->
-    • Survey participants were recruited from three sources
-    <!-- BOUNDARY_END type="list" id="p5_list_3" -->
+        Boundary-wrapped list-item string.
     """
-    # ========================================================================
-    # EXTRACT MARKER AND TEXT
-    # ========================================================================
-    # getattr with default handles items where enumeration is not set
-    # Fallback to "-" ensures we always have a valid marker
-    # ========================================================================
-    marker = getattr(item, 'enumeration', '-')
-    text = item.text.strip()
-
-    # ========================================================================
-    # FORMAT AS MARKDOWN LIST ITEM
-    # ========================================================================
-    # Combine marker and text with a space
-    # Example: "• First item" or "1. First item"
-    # ========================================================================
-    content = f"{marker} {text}"
-
-    # ========================================================================
-    # GENERATE ID AND WRAP
-    # ========================================================================
+    # Docling exposes the list marker via item.enumeration when available.
+    marker  = getattr(item, "enumeration", None) or "-"
+    text    = item.text.strip()
     item_id = generate_unique_id(page, "list")
 
     return wrap_with_boundaries(
-        content, "list", item_id, page,
-        breadcrumbs=" > ".join(breadcrumbs)
+        f"{marker} {text}", "list", item_id, page,
+        breadcrumbs=" > ".join(breadcrumbs),
     )
 
 
-def process_special_text(item: TextItem, page: int, breadcrumbs: List[str]) -> Optional[str]:
+def process_code(
+    item: TextItem,
+    page: int,
+    breadcrumbs: List[str],
+    openai_client_sync,  # Kept as a placeholder; async call deferred to gather
+) -> Tuple[str, Optional[str]]:
     """
-    Detect code blocks within a TextItem and wrap them in fenced code blocks.
+    Extract a code block and prepare the async AI-description coroutine.
 
-    HEURISTIC CODE DETECTION
-    ========================
+    Returns the boundary content string and the raw code text for async
+    enrichment.  The coroutine is NOT awaited here — it is collected into
+    the page-level asyncio.gather() call for concurrent execution.
 
-    We use pattern matching to detect code without needing explicit markers.
-
-    Code Signals:
-    - Indentation (starts with spaces or tabs)
-    - Already has fences (```)
-    - Python keywords (def, class, import)
-    - JavaScript keywords (function, const, let)
-    - C-style syntax ({ } ;)
-
-    Example Text Items:
-
-    NOT CODE:
-    "The function of this analysis is to determine..."
-    → Has word "function" but not a code pattern
-
-    IS CODE:
-    "def calculate_revenue(q1, q2, q3, q4):
-         return q1 + q2 + q3 + q4"
-    → Has "def", indentation, Python syntax
-
-    Language Detection:
-    ==================
-
-    Lightweight keyword-based detection:
-
-    Python indicators:
-    - "python" in text (explicit)
-    - "def " or "import " or "class " (Python syntax)
-
-    JavaScript indicators:
-    - "function" or "const " or "let " (JS syntax)
-
-    Unknown:
-    - Code detected but language unclear
-
-    Why Not Formulas?
-    ================
-
-    Formula detection was DISABLED because of too many false positives!
-
-    False Positive Example:
-    "The study (n=100) showed significant results (p<0.05)"
-    → Has parentheses and numbers
-    → Heuristic thinks it's a formula!
-    → But it's just regular text
-
-    For future formula support:
-    - Use explicit LaTeX delimiters ($...$, $$...$$)
-    - Don't rely on heuristics
+    Note on language detection:
+      Docling exposes item.code_language when it can identify the language
+      from context.  We use this directly rather than attempting our own
+      heuristic detection (no regex on keywords, no file extension guessing).
 
     Args:
-        item: Docling TextItem (might be code, might be regular text)
-        page: Current page number
-        breadcrumbs: Current document path
+        item              : TextItem with label DocItemLabel.CODE
+        page              : current page number
+        breadcrumbs       : current breadcrumb trail
+        openai_client_sync: unused in this function; kept for API symmetry
 
     Returns:
-        Boundary-wrapped fenced code block if code detected
-        None if not code (signals caller to use process_text() instead)
-
-    Example Output:
-    ==============
-
-    <!-- BOUNDARY_START type="code" id="p8_code_1" page="8"
-         language="python" breadcrumbs="Appendix > Code Samples" -->
-    ```python
-    def calculate_roi(revenue, cost):
-        return (revenue - cost) / cost * 100
-    ```
-    <!-- BOUNDARY_END type="code" id="p8_code_1" -->
-
-    Return Value Pattern:
-    ====================
-
-    - Returns string → Code detected, use this output
-    - Returns None → Not code, fall back to process_text()
-
-    This pattern lets us try special handling first,
-    then fall through to regular text if not special!
+        (partial boundary content without ai_description, raw code text)
+        The caller inserts ai_description after gathering all AI calls.
     """
-    text = item.text.strip()
+    text     = item.text.strip()
+    language = getattr(item, "code_language", None) or ""
+    item_id  = generate_unique_id(page, "code")
 
-    # ========================================================================
-    # MINIMUM LENGTH CHECK
-    # ========================================================================
-    # Very short strings can't reliably be code
-    # Example: "x" or "{}" might match patterns but aren't code blocks
-    # ========================================================================
-    if len(text) < 3:
-        return None
-
-    # ========================================================================
-    # HEURISTIC CODE DETECTION
-    # ========================================================================
-    # Check for multiple code indicators
-    # More matches = higher confidence it's code
-    # ========================================================================
-    is_code = (
-        # Indentation patterns
-        text.startswith('    ') or        # 4-space indent
-        text.startswith('\t') or          # Tab indent
-
-        # Already has code fences
-        '```' in text or
-
-        # Python-specific patterns
-        text.count('def ') > 0 or         # Function definition
-        text.count('class ') > 0 or       # Class definition
-        text.count('import ') > 0 or      # Import statement
-
-        # JavaScript-specific patterns
-        text.count('function ') > 0 or    # Function declaration
-
-        # C-style block structure
-        ('{' in text and '}' in text and ';' in text)
-    )
-
-    if is_code:
-        # ====================================================================
-        # LANGUAGE DETECTION
-        # ====================================================================
-        # Simple keyword matching for common languages
-        # Empty string if language can't be determined
-        # ====================================================================
-        language = ''
-
-        # Python detection
-        if ('python' in text.lower() or    # Explicit mention
-            'def ' in text or              # Function def
-            'import ' in text):            # Import statement
-            language = 'python'
-
-        # JavaScript detection
-        elif ('function' in text or        # Function keyword
-              'const ' in text or          # const declaration
-              'let ' in text):             # let declaration
-            language = 'javascript'
-
-        # ====================================================================
-        # FORMAT AS FENCED CODE BLOCK
-        # ====================================================================
-        # Markdown fenced code block syntax:
-        # ```language
-        # code here
-        # ```
-        # ====================================================================
-        content = f"```{language}\n{text}\n```"
-
-        # Generate ID and wrap
-        item_id = generate_unique_id(page, "code")
-
-        return wrap_with_boundaries(
-            content, "code", item_id, page,
-            language=language if language else "unknown",
-            breadcrumbs=" > ".join(breadcrumbs)
-        )
-
-    # ========================================================================
-    # NOT CODE - FORMULA DETECTION INTENTIONALLY DISABLED
-    # ========================================================================
-    # Formula detection was removed due to false positives
-    #
-    # If you need formula support in the future:
-    # - Look for explicit LaTeX delimiters: $...$, $$...$$
-    # - Don't use heuristics (parentheses, numbers, etc.)
-    # - LaTeX detection is much more reliable than patterns
-    # ========================================================================
-
-    # Not code → return None to signal "use regular text processing"
-    return None
+    # The boundary is assembled here WITHOUT ai_description.
+    # The caller will re-assemble with the completed AI description.
+    # We return (item_id, text, language, breadcrumbs) for the caller.
+    # ── Simplified: process_code returns a complete bundle to the caller ───
+    return item_id, text, language, breadcrumbs[:]
 
 
-def process_image(item: PictureItem, doc, page: int, output_dir: Path,
-                  image_counter: int, openai_client, breadcrumbs: List[str],
-                  next_item=None) -> Tuple[str, int]:
+def process_formula(
+    item: TextItem,
+    page: int,
+    breadcrumbs: List[str],
+) -> Tuple[str, str, List[str]]:
     """
-    Extract a figure/picture, save it, get AI description, return wrapped Markdown.
+    Extract a mathematical formula and return data needed for async enrichment.
 
-    CAPTION DETECTION
-    ================
+    Why formulas ALWAYS get an AI description:
+      Raw formula notation (LaTeX, Unicode, NONMEM syntax) tokenises into
+      symbol fragments that produce near-random vector embeddings.
+      The AI description is the primary VDB-searchable representation;
+      the raw formula is preserved in boundary content for exact retrieval.
 
-    Docling can detect when text is a caption for a figure!
-    The item.label attribute will be 'caption' for caption text.
+    Returns:
+        (item_id, formula_text, breadcrumbs_copy)
+        The caller awaits the enrichment coroutine and assembles the boundary.
+    """
+    text    = item.text.strip()
+    item_id = generate_unique_id(page, "formula")
+    return item_id, text, breadcrumbs[:]
 
-    Example PDF Layout:
-    [IMAGE]
-    Figure 2: Monthly Sales Trend 2024
 
-    Docling Item Stream:
-    1. PictureItem (the image)
-    2. TextItem with label='caption' (the caption text)
+# ==============================================================================
+# ASYNC PAGE PROCESSOR
+# ==============================================================================
 
-    We look ahead to next_item to check if it's a caption.
-    If yes, we:
-    - Include it in the boundary metadata
-    - Pass it to AI for richer context
-    - Mark it for skipping (so it doesn't appear twice)
+async def process_page(
+    page_num: int,
+    items: List[Dict],
+    doc,
+    output_dir: Path,
+    client: AsyncOpenAI,
+    s3_client,
+    s3_bucket: str,
+    doc_id: str,
+    breadcrumbs: List[str],
+) -> Tuple[str, List[str], int, int]:
+    """
+    Process all items on a single page concurrently.
+
+    Concurrency strategy:
+      The Docling extraction step (headers, paragraphs, list items) is
+      synchronous and fast — these run inline.
+      AI enrichment calls (tables, images, formulas, code) are collected
+      as coroutines first, then awaited together with asyncio.gather().
+      This means all AI calls for a page execute concurrently, reducing
+      wall-clock time from O(n×latency) to O(max_latency).
+
+    Caption consumption:
+      A TextItem with label DocItemLabel.CAPTION immediately following a
+      PictureItem or TableItem is consumed by that element and not emitted
+      as a standalone paragraph.  The look-ahead is done at the top of the
+      item loop.
 
     Args:
-        item: Docling PictureItem to process
-        doc: Parent Docling document
-        page: Current page number
-        output_dir: Document-level output directory
-        image_counter: Current counter for figures on this page
-        openai_client: Initialized OpenAI client
-        breadcrumbs: Current document path
-        next_item: Next item in the page stream (for caption detection)
+        page_num    : page number (1-indexed, from Docling)
+        items       : list of {"item": Docling item, "level": int} dicts
+        doc         : Docling Document (needed for image rendering)
+        output_dir  : local root directory for this document
+        client      : AsyncOpenAI client
+        s3_client   : boto3 S3 client (or None)
+        s3_bucket   : S3 bucket name
+        doc_id      : document identifier for S3 key construction
+        breadcrumbs : breadcrumb trail carried in from previous pages (mutated)
 
     Returns:
-        Tuple of (boundary_wrapped_markdown, updated_image_counter)
-
-        Returns ("", image_counter) if extraction fails
-
-    IMAGE COUNTER TRACKING
-    =====================
-
-    The counter ensures unique filenames within each page:
-    - Page 3, first image:  fig_p3_1.png  (counter=1)
-    - Page 3, second image: fig_p3_2.png  (counter=2)
-    - Page 3, table image:  fig_p3_3.png  (counter=3)
-    - Page 4, first image:  fig_p4_1.png  (counter resets!)
-
-    We increment and return the counter so the caller can
-    pass the updated value to the next image/table on this page.
-
-    Why Not Use generate_unique_id() Counter?
-    =========================================
-
-    Different purposes:
-    - generate_unique_id(): For element IDs in boundaries
-    - image_counter: For filenames on disk
-
-    Image filenames are shared between images AND tables
-    (both go in figures/), so they need a unified counter.
-
-    Element IDs are per-type, so we track them separately.
-
-    Example Output:
-    ==============
-
-    <!-- BOUNDARY_START type="image" id="p3_image_2" page="3"
-         filename="fig_p3_2.png" has_caption="yes"
-         breadcrumbs="Results > Charts" -->
-    **Image**
-    *Caption:* Figure 2: Monthly Sales Trend 2024
-    ![fig_p3_2.png](../figures/fig_p3_2.png)
-    *AI Analysis:* Line chart showing monthly sales from January to
-    December 2024. Y-axis represents revenue in millions, X-axis shows
-    months. Clear upward trend visible with significant spike in Q4.
-    <!-- BOUNDARY_END type="image" id="p3_image_2" -->
+        (page_markdown_text, updated_breadcrumbs, image_count, table_count)
     """
-    # ========================================================================
-    # CAPTION DETECTION
-    # ========================================================================
-    # Check if the NEXT item in the stream is this image's caption
-    # Docling assigns label='caption' to caption text blocks
-    # ========================================================================
-    caption = None
-    if next_item and isinstance(next_item, TextItem):
-        label = next_item.label
-        text = next_item.text.strip()
-
-        # Docling's caption detection is reliable!
-        if label == 'caption':
-            caption = text
-
-    # ========================================================================
-    # EXTRACT AND SAVE IMAGE
-    # ========================================================================
-    # Delegate to shared extraction function
-    # This handles: rendering, saving, AI description
-    # ========================================================================
-    img_result = extract_and_save_image(
-        item, doc, page, output_dir, image_counter,
-        openai_client, caption=caption, is_table=False
-    )
-
-    if not img_result:
-        # Extraction failed → return empty string, don't increment counter
-        return "", image_counter
-
-    # Unpack extraction results
-    filename, filepath, ai_desc, type_label = img_result
-
-    # ========================================================================
-    # GENERATE UNIQUE ID
-    # ========================================================================
-    item_id = generate_unique_id(page, "image")
-
-    # ========================================================================
-    # BUILD MARKDOWN CONTENT
-    # ========================================================================
-    # Structure:
-    # **Image**                    ← Type label
-    # *Caption:* ...               ← Caption (if present)
-    # ![filename](path)            ← Image link
-    # *AI Analysis:* ...           ← AI description
+    # ── Synchronous first pass: extract structure, queue async tasks ───────────
     #
-    # Why this structure?
-    # - Clear visual hierarchy
-    # - Caption provides context
-    # - AI analysis adds semantic meaning
-    # - All searchable text in one place
-    # ========================================================================
-    content_parts = [f"**{type_label}**"]
+    # We separate the sync extraction from the async enrichment so that all
+    # AI calls on the page can be gathered in one asyncio.gather() call.
+    #
+    # sync_outputs : list of (position_index, markdown_string)
+    #                for elements that need no AI call
+    # async_tasks  : list of (position_index, type, coroutine, metadata)
+    #                for elements that require an async AI call
+    #
+    sync_outputs: List[Tuple[int, str]] = []
+    async_tasks:  List[Tuple[int, str, any, Dict]] = []
 
-    # Add caption if detected
-    if caption:
-        content_parts.append(f"*Caption:* {caption}")
+    image_counter = 1
+    image_count   = 0
+    table_count   = 0
+    skip_next     = False
 
-    # Add image link
-    # ../ goes up from pages/ to document root, then into figures/
-    content_parts.append(f"![{filename}](../{filepath})")
+    for idx, entry in enumerate(items):
+        if skip_next:
+            skip_next = False
+            continue
 
-    # Add AI analysis
-    content_parts.append(f"*AI Analysis:* {ai_desc}")
+        item  = entry["item"]
+        level = entry["level"]
+        label = item.label
 
-    # Join with newlines
-    content = "\n".join(content_parts)
+        # ── Caption look-ahead ────────────────────────────────────────────────
+        # A CAPTION TextItem immediately after a figure or table is consumed
+        # by that element's processor so it becomes the caption= argument.
+        # skip_next=True prevents it from also emitting as a paragraph.
+        caption: Optional[str] = None
+        if idx + 1 < len(items):
+            next_item = items[idx + 1]["item"]
+            if (isinstance(next_item, TextItem) and
+                    next_item.label == DocItemLabel.CAPTION):
+                caption   = next_item.text.strip()
+                skip_next = True
 
-    # ========================================================================
-    # WRAP WITH BOUNDARIES
-    # ========================================================================
-    output = wrap_with_boundaries(
-        content, "image", item_id, page,
-        filename=filename,
-        has_caption="yes" if caption else "no",
-        breadcrumbs=" > ".join(breadcrumbs)
-    )
+        # ── 1. Discard page boilerplate ───────────────────────────────────────
+        # PAGE_HEADER and PAGE_FOOTER are structural noise — running headers,
+        # page numbers, confidentiality footers.  Discarded by label.
+        if label in _SKIP_LABELS:
+            continue
 
-    # ========================================================================
-    # RETURN WITH UPDATED COUNTER
-    # ========================================================================
-    # Increment counter → next image on this page gets different filename
-    return output, image_counter + 1
+        # ── 2. Code blocks ────────────────────────────────────────────────────
+        # Checked by label BEFORE isinstance(TextItem) because Docling may
+        # represent code as a plain TextItem with label=CODE.
+        elif label == DocItemLabel.CODE:
+            item_id, text, language, bc = process_code(
+                item, page_num, breadcrumbs, None
+            )
+            # Emit code boundary regardless of length.
+            # AI description is added only if text exceeds threshold.
+            if len(text) > CODE_DESCRIPTION_MIN_LEN:
+                # Queue async AI description call.
+                meta = {"item_id": item_id, "text": text,
+                        "language": language, "breadcrumbs": bc}
+                async_tasks.append((idx, "code", None, meta))
+            else:
+                # Short code block — emit immediately without description.
+                output = wrap_with_boundaries(
+                    f"```{language}\n{text}\n```",
+                    "code", item_id, page_num,
+                    language=language or "unknown",
+                    breadcrumbs=" > ".join(bc),
+                )
+                sync_outputs.append((idx, output))
+
+        # ── 3. Mathematical formulas ──────────────────────────────────────────
+        elif label == DocItemLabel.FORMULA:
+            item_id, text, bc = process_formula(item, page_num, breadcrumbs)
+            meta = {"item_id": item_id, "text": text, "breadcrumbs": bc}
+            async_tasks.append((idx, "formula", None, meta))
+
+        # ── 4. Section headers ────────────────────────────────────────────────
+        # MUST precede isinstance(TextItem) — SectionHeaderItem is a subclass.
+        elif isinstance(item, SectionHeaderItem):
+            output, breadcrumbs = process_header(item, page_num, level, breadcrumbs)
+            if output:
+                sync_outputs.append((idx, output))
+
+        # ── 5. List items ─────────────────────────────────────────────────────
+        # MUST precede isinstance(TextItem) — ListItem is a subclass.
+        elif isinstance(item, ListItem):
+            output = process_list(item, page_num, breadcrumbs)
+            if output:
+                sync_outputs.append((idx, output))
+
+        # ── 6. Generic text (paragraphs, titles, footnotes) ───────────────────
+        elif isinstance(item, TextItem):
+            output = process_text(item, page_num, breadcrumbs)
+            if output:
+                sync_outputs.append((idx, output))
+
+        # ── 7. Figures ────────────────────────────────────────────────────────
+        elif isinstance(item, PictureItem):
+            filename = f"fig_p{page_num}_{image_counter}.png"
+            meta = {
+                "item": item, "doc": doc, "filename": filename,
+                "breadcrumbs": breadcrumbs[:], "caption": caption,
+                "is_table": False,
+            }
+            async_tasks.append((idx, "image", None, meta))
+            image_counter += 1
+            image_count   += 1
+
+        # ── 8. Tables ─────────────────────────────────────────────────────────
+        elif isinstance(item, TableItem):
+            # Attempt text export first; fall back to image rendering.
+            try:
+                df = item.export_to_dataframe()
+                if df.empty or len(df) == 0 or len(df.columns) == 0:
+                    raise ValueError("Empty dataframe")
+                md_table = df.to_markdown(index=False)
+                if len(md_table) <= 50:
+                    raise ValueError("Trivially short markdown")
+
+                item_id = generate_unique_id(page_num, "table")
+                meta = {
+                    "item_id": item_id, "md_table": md_table,
+                    "rows": len(df), "columns": len(df.columns),
+                    "breadcrumbs": breadcrumbs[:], "caption": caption,
+                    "type": "table_text",
+                }
+                async_tasks.append((idx, "table_text", None, meta))
+                table_count += 1
+            except Exception:
+                # Text export failed — render as image.
+                filename = f"fig_p{page_num}_{image_counter}.png"
+                meta = {
+                    "item": item, "doc": doc, "filename": filename,
+                    "breadcrumbs": breadcrumbs[:], "caption": caption,
+                    "is_table": True,
+                }
+                async_tasks.append((idx, "image", None, meta))
+                image_counter += 1
+                table_count   += 1
+
+    # ── Async second pass: run all AI calls for this page concurrently ─────────
+    #
+    # Build one coroutine per queued task and gather them.
+    # Results come back in the same order as the input list.
+
+    async def resolve_task(task_type: str, meta: Dict) -> str:
+        """Resolve a single async task to its final boundary-marked string."""
+
+        if task_type == "code":
+            ai_desc = await describe_code_with_ai(
+                meta["text"], client, label=meta["item_id"]
+            )
+            return wrap_with_boundaries(
+                f"```{meta['language']}\n{meta['text']}\n```",
+                "code", meta["item_id"], page_num,
+                language=meta["language"] or "unknown",
+                breadcrumbs=" > ".join(meta["breadcrumbs"]),
+                ai_description=ai_desc,
+            )
+
+        elif task_type == "formula":
+            ai_desc = await describe_formula_with_ai(
+                meta["text"], client, label=meta["item_id"]
+            )
+            return wrap_with_boundaries(
+                meta["text"], "formula", meta["item_id"], page_num,
+                breadcrumbs=" > ".join(meta["breadcrumbs"]),
+                ai_description=ai_desc,
+            )
+
+        elif task_type == "table_text":
+            # Upload raw Markdown to S3 first (independent of AI call).
+            s3_uri = ""
+            if s3_client and s3_bucket:
+                try:
+                    s3_key = f"{doc_id}/tables/{meta['item_id']}.md"
+                    s3_uri = upload_to_s3(
+                        s3_client, s3_bucket, s3_key,
+                        meta["md_table"].encode("utf-8"), "text/markdown",
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "S3 table upload failed  id=%s  error=%s",
+                        meta["item_id"], exc,
+                    )
+
+            ai_desc = await describe_table_with_ai(
+                meta["md_table"], client,
+                caption=meta["caption"], label=meta["item_id"],
+            )
+
+            parts = []
+            if meta["caption"]:
+                parts.append(f"*Caption:* {meta['caption']}")
+            parts.append(meta["md_table"])
+
+            return wrap_with_boundaries(
+                "\n".join(parts), "table", meta["item_id"], page_num,
+                rows=meta["rows"],
+                columns=meta["columns"],
+                has_caption="yes" if meta["caption"] else "no",
+                breadcrumbs=" > ".join(meta["breadcrumbs"]),
+                s3_uri=s3_uri or None,
+                ai_description=ai_desc,
+            )
+
+        elif task_type == "image":
+            result = await _extract_and_save_image(
+                meta["item"], meta["doc"], page_num, output_dir,
+                meta["filename"], client, s3_client, s3_bucket, doc_id,
+                meta["caption"], meta["is_table"],
+            )
+            if result is None:
+                return ""
+            filename, s3_uri, ai_desc, type_label = result
+            # Use a stable item_id (image_counter was already incremented above)
+            item_id = generate_unique_id(page_num, "image_resolved")
+
+            parts = [f"**{type_label}**"]
+            if meta["caption"]:
+                parts.append(f"*Caption:* {meta['caption']}")
+            parts.append(f"![{filename}](../figures/{filename})")
+
+            return wrap_with_boundaries(
+                "\n".join(parts), "image", item_id, page_num,
+                image_filename=filename,
+                has_caption="yes" if meta["caption"] else "no",
+                breadcrumbs=" > ".join(meta["breadcrumbs"]),
+                s3_uri=s3_uri or None,
+                ai_description=ai_desc,
+            )
+
+        return ""  # Unknown task type — emit nothing
+
+    # Run all async tasks for the page in parallel.
+    coroutines   = [resolve_task(tt, m) for (_, tt, _, m) in async_tasks]
+    async_results: List[str] = await asyncio.gather(*coroutines)
+
+    # ── Merge sync and async results in original document order ───────────────
+    #
+    # We reconstruct the page output in the order items appeared in the PDF.
+    # sync_outputs has (original_idx, string) pairs.
+    # async_tasks  has (original_idx, type, coro, meta) aligned with async_results.
+
+    ordered: List[Tuple[int, str]] = list(sync_outputs)
+    for i, (orig_idx, _, _, _) in enumerate(async_tasks):
+        if async_results[i]:
+            ordered.append((orig_idx, async_results[i]))
+
+    # Sort by original item index to restore reading order.
+    ordered.sort(key=lambda x: x[0])
+    page_text = "\n\n".join(s for _, s in ordered if s)
+
+    return page_text, breadcrumbs, image_count, table_count
 
 
-def process_table(item: TableItem, doc, page: int, output_dir: Path,
-                  image_counter: int, openai_client, breadcrumbs: List[str],
-                  next_item=None) -> Tuple[str, int]:
+# ==============================================================================
+# MAIN PDF PIPELINE
+# ==============================================================================
+
+async def process_pdf(
+    pdf_path: Path,
+    output_base_dir: Path,
+    client: AsyncOpenAI,
+    s3_client=None,
+    s3_bucket: str = "",
+    doc_id: str = "",
+) -> Dict:
     """
-    Process a table using text-first, image-fallback strategy.
+    Full async pipeline: Extract → Enrich → Upload for a single PDF.
 
-    TWO-STAGE EXTRACTION STRATEGY
-    =============================
+    Processing stages:
+      [1/4]  Docling layout analysis         (synchronous, CPU-bound)
+      [2/4]  Group items by page             (synchronous, in-memory)
+      [3/4]  Per-page async processing loop  (async AI calls per page)
+      [4/4]  Write metadata.json + S3 upload (I/O)
 
-    Our table processing is SMART - we try the best method first,
-    then fall back if needed!
-
-    STAGE 1 - TEXT EXPORT (Preferred):
-    ----------------------------------
-    ✓ Fast (no image rendering)
-    ✓ Cheap (text tokens << image tokens)
-    ✓ Lossless (exact cell values preserved)
-    ✓ Searchable (text can be grepped, indexed)
-    ✓ Copy-pasteable (users can copy table data)
-
-    How it works:
-    1. Docling's TableFormer extracts table as pandas DataFrame
-    2. DataFrame.to_markdown() converts to Markdown table
-    3. Send Markdown text to GPT-4o for analysis
-    4. Done! Clean, cheap, fast.
-
-    When it works:
-    - Simple tables (regular rows/columns)
-    - Most financial tables
-    - Data tables with clear structure
-
-    STAGE 2 - IMAGE EXPORT (Fallback):
-    ----------------------------------
-    Used when text export fails or produces garbage
-
-    Why it might fail:
-    - Complex merged cells
-    - Nested tables
-    - Image-based tables (scanned PDFs)
-    - Malformed table structure
-
-    How it works:
-    1. Render table as PNG image
-    2. Send image to GPT-4 Vision
-    3. Done! Works for any table.
-
-    Tradeoffs:
-    - Slower (image rendering + Vision API)
-    - More expensive (image tokens)
-    - Lossy (OCR-like, may miss small text)
-    - Not searchable by content
-
-    But it works when text fails! Better than nothing.
-
-    CAPTION DETECTION FOR TABLES
-    ============================
-
-    Table captions use PATTERN MATCHING (not Docling label)
-    because table captions often appear ABOVE the table
-    and Docling doesn't always label them correctly.
-
-    Caption Patterns:
-    - Starts with: Exhibit, Figure, Table, Chart, Source:
-    - Contains: "Source:" anywhere
-    - Short with colon: Length <200 and has ':'
-
-    Examples:
-    ✓ "Exhibit 3: Quarterly Revenue FY2024"
-    ✓ "Table 1: Market Share by Region"
-    ✓ "Source: Company filings, analyst estimates"
-    ✓ "Revenue breakdown:" (short + colon)
-    ✗ "This is a long paragraph without colon markers"
+    S3 uploads happen inline during stage 3 (table Markdown, image PNGs,
+    per-page .md files) so each asset is durable before the next page starts.
+    metadata.json is uploaded last in stage 4 as a completion marker — its
+    presence in S3 signals to Stage 2 that extraction is finished.
 
     Args:
-        item: Docling TableItem to process
-        doc: Parent Docling document
-        page: Current page number
-        output_dir: Document-level output directory
-        image_counter: Current counter for figures on this page
-        openai_client: Initialized OpenAI client
-        breadcrumbs: Current document path
-        next_item: Next item in stream (for caption detection)
+        pdf_path        : path to the PDF file
+        output_base_dir : local directory to write extracted output under
+        client          : AsyncOpenAI client
+        s3_client       : boto3 S3 client (None for local-only runs)
+        s3_bucket       : S3 bucket name (empty string for local-only)
+        doc_id          : document identifier used as the S3 key prefix.
+                          Defaults to pdf_path.stem when not provided.
 
     Returns:
-        Tuple of (boundary_wrapped_markdown, updated_image_counter)
-
-        Counter only increments if image fallback was used
-        (text export doesn't create image files)
-
-    Example Output (Text Export):
-    ============================
-
-    <!-- BOUNDARY_START type="table" id="p5_table_1" page="5"
-         rows="4" columns="3" has_caption="yes"
-         breadcrumbs="Results > Revenue" -->
-    *Caption:* Table 1: Quarterly Revenue FY2024
-    | Quarter | Revenue | Growth |
-    |---------|---------|--------|
-    | Q1      | $100M   | -      |
-    | Q2      | $110M   | 10%    |
-    | Q3      | $125M   | 14%    |
-    | Q4      | $140M   | 12%    |
-
-    *AI Analysis:* Table shows quarterly revenue progression with
-    consistent growth throughout 2024, from $100M to $140M representing
-    40% annual growth.
-    <!-- BOUNDARY_END type="table" id="p5_table_1" -->
-
-    Example Output (Image Fallback):
-    ===============================
-
-    <!-- BOUNDARY_START type="image" id="p5_image_1" page="5"
-         filename="fig_p5_1.png" has_caption="yes"
-         breadcrumbs="Results > Revenue" -->
-    **Table/Chart**
-    *Caption:* Table 1: Complex Merged Cell Revenue Table
-    ![fig_p5_1.png](../figures/fig_p5_1.png)
-    *AI Analysis:* Complex table with merged cells showing revenue
-    breakdown by region and product line. Multiple nested categories
-    make text extraction difficult.
-    <!-- BOUNDARY_END type="image" id="p5_image_1" -->
+        metadata dict written to metadata.json
     """
-    # ========================================================================
-    # CAPTION DETECTION FOR TABLES
-    # ========================================================================
-    # Use pattern matching (not Docling label) for table captions
-    # because table captions often appear above tables and aren't
-    # always labeled correctly by Docling
-    # ========================================================================
-    caption = None
-    if next_item and isinstance(next_item, TextItem):
-        text = next_item.text.strip()
-
-        # Heuristic caption patterns
-        is_caption = (
-            # Starts with common caption keywords
-            text.startswith(('Exhibit', 'Figure', 'Table', 'Chart', 'Source:')) or
-
-            # Contains source attribution
-            'Source:' in text or
-
-            # Short line with colon (often a table title)
-            (len(text) < 200 and ':' in text)
-        )
-
-        if is_caption:
-            caption = text
-
-    # ========================================================================
-    # STAGE 1: TRY TEXT EXPORT (Preferred Method)
-    # ========================================================================
-    # Attempt to export table as pandas DataFrame and convert to Markdown
-    # This is MUCH preferred over image export when it works!
-    # ========================================================================
-
-    text_table_valid = False  # Flag: Did text export succeed?
-    df = None                 # pandas DataFrame (if successful)
-    md_table = None          # Markdown table string (if successful)
-
-    try:
-        # --------------------------------------------------------------------
-        # EXPORT TO DATAFRAME
-        # --------------------------------------------------------------------
-        # Docling's TableFormer ML model extracts table structure
-        # Returns pandas DataFrame with rows/columns preserved
-        # --------------------------------------------------------------------
-        df = item.export_to_dataframe()
-
-        # --------------------------------------------------------------------
-        # VALIDATE DATAFRAME
-        # --------------------------------------------------------------------
-        # Check that DataFrame is usable:
-        # - Not empty (has rows)
-        # - Has columns
-        # - Has enough content to be meaningful
-        # --------------------------------------------------------------------
-        if not df.empty and len(df) > 0 and len(df.columns) > 0:
-            # ----------------------------------------------------------------
-            # CONVERT TO MARKDOWN
-            # ----------------------------------------------------------------
-            # pandas .to_markdown() creates a clean Markdown table
-            # index=False means don't include DataFrame row index
-            # ----------------------------------------------------------------
-            md_table = df.to_markdown(index=False)
-
-            # ----------------------------------------------------------------
-            # SANITY CHECK
-            # ----------------------------------------------------------------
-            # Very short "tables" (<50 chars) are often extraction noise
-            # Example: Single-cell tables, header-only tables
-            # Better to fall back to image for these
-            # ----------------------------------------------------------------
-            text_table_valid = len(md_table) > 50
-
-    except Exception:
-        # export_to_dataframe() can raise on malformed tables
-        # Catch all exceptions and fall back to image
-        text_table_valid = False
-
-    # ========================================================================
-    # TEXT EXPORT SUCCESS PATH
-    # ========================================================================
-    if text_table_valid and md_table:
-        # ====================================================================
-        # GENERATE UNIQUE ID
-        # ====================================================================
-        item_id = generate_unique_id(page, "table")
-
-        # ====================================================================
-        # GET AI DESCRIPTION (Text-based)
-        # ====================================================================
-        # Send Markdown table as TEXT to GPT-4o
-        # This is cheaper than Vision and works well for structured data
-        # ====================================================================
-        table_desc = describe_table_with_ai(md_table, openai_client, caption)
-
-        # ====================================================================
-        # BUILD MARKDOWN CONTENT
-        # ====================================================================
-        # Structure:
-        # *Caption:* ...    ← Caption (if present)
-        # | Header | Data | ← Markdown table
-        # |--------|------|
-        # | Row1   | Data |
-        # *AI Analysis:* ... ← AI description
-        # ====================================================================
-        content_parts = []
-
-        # Add caption if detected
-        if caption:
-            content_parts.append(f"*Caption:* {caption}")
-
-        # Add the Markdown table
-        content_parts.append(md_table)
-
-        # Add AI analysis
-        content_parts.append(f"\n*AI Analysis:* {table_desc}")
-
-        # Join with newlines
-        content = "\n".join(content_parts)
-
-        # ====================================================================
-        # WRAP WITH BOUNDARIES
-        # ====================================================================
-        # Include table dimensions in metadata
-        # rows/columns help with filtering and quality checks
-        # ====================================================================
-        output = wrap_with_boundaries(
-            content, "table", item_id, page,
-            rows=len(df),
-            columns=len(df.columns),
-            has_caption="yes" if caption else "no",
-            breadcrumbs=" > ".join(breadcrumbs)
-        )
-
-        # ====================================================================
-        # RETURN WITHOUT INCREMENTING COUNTER
-        # ====================================================================
-        # No image file was created, so counter stays the same
-        # Next image/table on this page will use the same counter value
-        # ====================================================================
-        return output, image_counter
-
-    # ========================================================================
-    # STAGE 2: IMAGE FALLBACK
-    # ========================================================================
-    # Text export failed → render table as image and use Vision API
-    # ========================================================================
-
-    # is_table=True tells extract_and_save_image():
-    # - Label as "Table/Chart" (not "Image")
-    # - Affects AI prompt context
-    img_result = extract_and_save_image(
-        item, doc, page, output_dir, image_counter,
-        openai_client, caption=caption, is_table=True
-    )
-
-    if img_result:
-        # ====================================================================
-        # IMAGE EXTRACTION SUCCEEDED
-        # ====================================================================
-        filename, filepath, ai_desc, type_label = img_result
-
-        # Note: ID type is "image" (not "table") because we saved a PNG
-        item_id = generate_unique_id(page, "image")
-
-        # ====================================================================
-        # BUILD MARKDOWN CONTENT
-        # ====================================================================
-        # Same structure as process_image()
-        # ====================================================================
-        content_parts = [f"**{type_label}**"]  # "Table/Chart"
-
-        if caption:
-            content_parts.append(f"*Caption:* {caption}")
-
-        content_parts.append(f"![{filename}](../{filepath})")
-        content_parts.append(f"*AI Analysis:* {ai_desc}")
-
-        content = "\n".join(content_parts)
-
-        output = wrap_with_boundaries(
-            content, "image", item_id, page,
-            filename=filename,
-            has_caption="yes" if caption else "no",
-            breadcrumbs=" > ".join(breadcrumbs)
-        )
-
-        # ====================================================================
-        # RETURN WITH INCREMENTED COUNTER
-        # ====================================================================
-        # Image file was created, so increment counter
-        # Next image/table gets a different filename
-        # ====================================================================
-        return output, image_counter + 1
-
-    # ========================================================================
-    # BOTH STAGES FAILED
-    # ========================================================================
-    # Text export failed AND image extraction failed
-    # This is rare but can happen with:
-    # - Corrupted table elements in PDF
-    # - Encrypted/DRM-protected content
-    # - Disk space issues
-    #
-    # Return empty string, leave counter unchanged
-    # Document processing continues without this table
-    # ========================================================================
-    return "", image_counter
-
-
-# =============================================================================
-# MAIN PROCESSING
-# =============================================================================
-#
-# This section contains the core pipeline logic that ties everything together.
-#
-# process_pdf() is the MAIN FUNCTION - it orchestrates all the processors!
-#
-# =============================================================================
-
-def process_pdf(pdf_path: Path, output_base_dir: Path, openai_client) -> Dict:
-    """
-    End-to-end processor for a single PDF file.
-
-    This is the HEART of the extraction pipeline!
-    It coordinates all the other functions to transform a PDF
-    into structured, boundary-marked Markdown files.
-
-    PROCESSING PIPELINE (4 Main Steps):
-    ===================================
-
-    Step 1: DOCLING CONVERSION
-    -------------------------
-    - Convert PDF using Docling DocumentConverter
-    - Docling analyzes layout, detects elements
-    - Returns Document object with all items
-
-    Step 2: PAGE GROUPING
-    --------------------
-    - Iterate through all document items
-    - Group items by page number (using provenance data)
-    - Creates {page_num: [items]} dictionary
-
-    Step 3: PAGE PROCESSING
-    ----------------------
-    - For each page:
-      * Process items sequentially
-      * Dispatch to appropriate processor (header, text, image, etc.)
-      * Handle caption detection and skipping
-      * Join all outputs with blank lines
-      * Write page_{num}.md file
-
-    Step 4: METADATA GENERATION
-    --------------------------
-    - Create metadata.json index file
-    - Records: pages processed, images/tables counts, timestamp
-    - This acts as a manifest for the extracted document
-
-    OUTPUT STRUCTURE:
-    ================
-
-    {output_base_dir}/{pdf_stem}/
-    ├── pages/
-    │   ├── page_1.md     ← Boundary-marked Markdown
-    │   ├── page_2.md
-    │   └── ...
-    ├── figures/
-    │   ├── fig_p1_1.png  ← Extracted images
-    │   ├── fig_p2_1.png
-    │   └── ...
-    └── metadata.json     ← Index and statistics
-
-    Args:
-        pdf_path: Absolute path to the PDF file
-            Example: /home/user/pdfs/clinical_trial.pdf
-
-        output_base_dir: Root output directory
-            Example: ./extracted_docs_bounded
-            We'll create: ./extracted_docs_bounded/clinical_trial/
-
-        openai_client: Initialized OpenAI client for AI descriptions
-
-    Returns:
-        metadata dict (also written to metadata.json)
-        {
-          "file": "clinical_trial.pdf",
-          "processed": "2024-02-22T14:30:25.123456",
-          "tool": "Docling Simple Bounded",
-          "pages": [...],
-          "total_images": 15,
-          "total_tables": 8
-        }
-
-    Error Handling:
-    ==============
-
-    This function does NOT catch exceptions!
-    Why? Let errors propagate to process_batch() so:
-    - Failed PDFs are logged
-    - Batch processing continues
-    - Users see exactly what failed
-
-    If we caught exceptions here, failures would be silent!
-    """
-    # ========================================================================
-    # STARTUP LOGGING
-    # ========================================================================
-    # Print clear visual separator and PDF name
-    # Makes it easy to find in logs when processing batches
-    # ========================================================================
-    print(f"\n{'='*70}")
-    print(f"Processing: {pdf_path.name}")
-    print(f"{'='*70}")
-
-    # ========================================================================
-    # RESET ID COUNTERS
-    # ========================================================================
-    # CRITICAL: Reset counters so this document's IDs start fresh
-    # Without this, IDs would continue from previous PDF in batch!
-    #
-    # Example problem without reset:
-    # Doc 1: p1_text_1, p1_text_2, p1_text_3
-    # Doc 2: p1_text_4, p1_text_5  ← BAD! Should start at 1
-    # ========================================================================
+    t_start = time.monotonic()
     reset_id_counters()
 
-    # ========================================================================
-    # CREATE OUTPUT DIRECTORIES
-    # ========================================================================
-    # Create folder structure for this document:
-    # {output_base_dir}/{pdf_stem}/pages/
-    # {output_base_dir}/{pdf_stem}/figures/
-    #
-    # Example:
-    # pdf_path = "clinical_trial.pdf"
-    # pdf_path.stem = "clinical_trial" (filename without extension)
-    # doc_output_dir = "./extracted_docs_bounded/clinical_trial/"
-    # ========================================================================
-    doc_output_dir = output_base_dir / pdf_path.stem
+    effective_doc_id = doc_id or pdf_path.stem
+    doc_output_dir   = output_base_dir / pdf_path.stem
+
+    # Create local output directories.
     (doc_output_dir / "pages").mkdir(parents=True, exist_ok=True)
     (doc_output_dir / "figures").mkdir(parents=True, exist_ok=True)
 
-    # ========================================================================
-    # STEP 1: DOCLING PDF CONVERSION
-    # ========================================================================
-    print("   [1/4] Analyzing PDF layout...")
+    logger.info("=" * 60)
+    logger.info("Processing: %s", pdf_path.name)
+    logger.info("Output:     %s", doc_output_dir)
+    logger.info("=" * 60)
 
-    # Create configured DocumentConverter instance
+    # ── [1/4] Docling layout analysis ─────────────────────────────────────────
+    # Docling's DocumentConverter runs synchronously — it is CPU/IO-bound
+    # and has no async API.  We run it in the main thread.
+    logger.info("[1/4] Analysing PDF layout with Docling…")
     converter = create_docling_converter()
+    doc       = converter.convert(pdf_path).document
+    logger.info("[1/4] Layout analysis complete")
 
-    # Convert the PDF!
-    # This is where Docling does its magic:
-    # - Parses PDF layout
-    # - Detects text blocks, tables, images
-    # - Runs TableFormer ML model
-    # - Renders images at our requested scale
-    conv_result = converter.convert(pdf_path)
-
-    # Extract the Document object
-    doc = conv_result.document
-
-    print("      SUCCESS: Layout analysis complete")
-
-    # ========================================================================
-    # STEP 2: GROUP ITEMS BY PAGE
-    # ========================================================================
-    # doc.iterate_items() yields (item, level) tuples in document order
-    #
-    # item: Docling item (TextItem, TableItem, etc.)
-    # level: Heading depth (for SectionHeaderItem)
-    #
-    # We group these by page number for sequential processing
-    # ========================================================================
-    print("   [2/4] Collecting document items...")
-
-    # Dictionary: {page_num: [{"item": item, "level": level}, ...]}
-    pages_items = defaultdict(list)
-
+    # ── [2/4] Group items by page ──────────────────────────────────────────────
+    # doc.iterate_items() yields (item, level) pairs.
+    # level is the heading depth for SectionHeaderItem; ignored for other types.
+    # We group into a dict keyed by page number for ordered page processing.
+    logger.info("[2/4] Collecting document items…")
+    pages_items: Dict[int, List[Dict]] = defaultdict(list)
     for item, level in doc.iterate_items():
-        # ====================================================================
-        # CHECK PROVENANCE (LOCATION DATA)
-        # ====================================================================
-        # item.prov contains location information:
-        # - Which page the item is on
-        # - Where on the page (bbox coordinates)
-        #
-        # Items without prov can't be placed in output → skip them
-        # These are usually document-level metadata items
-        # ====================================================================
         if not item.prov:
-            continue  # Skip items with no page location
+            # Items without provenance have no page association — skip.
+            continue
+        pages_items[item.prov[0].page_no].append({"item": item, "level": level})
 
-        # Extract page number (1-based)
-        page_num = item.prov[0].page_no
+    total_items = sum(len(v) for v in pages_items.values())
+    logger.info("[2/4] %d items across %d pages", total_items, len(pages_items))
 
-        # Add to page's item list
-        pages_items[page_num].append({"item": item, "level": level})
+    # ── [3/4] Per-page async extraction + enrichment + upload ─────────────────
+    logger.info("[3/4] Extracting, enriching, uploading (async)…")
+    metadata_pages: List[Dict]    = []
+    global_breadcrumbs: List[str] = []  # Carried across page boundaries
+    total_images = 0
+    total_tables = 0
 
-    # Count total items across all pages
-    total_items = sum(len(items) for items in pages_items.values())
-
-    print(f"      SUCCESS: Collected {total_items} items "
-          f"across {len(pages_items)} pages")
-
-    # ========================================================================
-    # STEP 3: PROCESS EACH PAGE
-    # ========================================================================
-    print("   [3/4] Processing items with boundaries...")
-
-    # Tracking variables
-    metadata_pages = []       # Per-page summaries for metadata.json
-    global_breadcrumbs = []   # Persists across pages (section context)
-    total_images = 0          # Global image counter
-    total_tables = 0          # Global table counter
-
-    # Process pages in order (sorted by page number)
     for page_num in sorted(pages_items.keys()):
-        items = pages_items[page_num]
+        logger.info("  Page %d / %d…", page_num, max(pages_items.keys()))
 
-        # Per-page tracking
-        page_outputs = []        # Markdown strings for this page
-        page_image_count = 0     # Images on this page
-        page_table_count = 0     # Tables on this page
-        image_counter = 1        # Filename counter (resets per page)
-        skip_indices = set()     # Items consumed as captions
+        page_text, global_breadcrumbs, img_count, tbl_count = await process_page(
+            page_num=page_num,
+            items=pages_items[page_num],
+            doc=doc,
+            output_dir=doc_output_dir,
+            client=client,
+            s3_client=s3_client,
+            s3_bucket=s3_bucket,
+            doc_id=effective_doc_id,
+            breadcrumbs=global_breadcrumbs,
+        )
 
-        # ====================================================================
-        # PAGE HEADER
-        # ====================================================================
-        # Start page with section context (if we have breadcrumbs)
-        # This helps readers know where they are in the document
-        # even without seeing previous pages
-        #
-        # Example:
-        # <!-- Context: Financial Results > Revenue > Q4 Performance -->
-        # ====================================================================
-        if global_breadcrumbs:
-            page_outputs.append(f"<!-- Context: {' > '.join(global_breadcrumbs)} -->")
-
-        # Add page title
-        page_outputs.append(f"\n# Page {page_num}\n")
-
-        # ====================================================================
-        # PROCESS ITEMS ON THIS PAGE
-        # ====================================================================
-        for idx, entry in enumerate(items):
-            # ================================================================
-            # SKIP CAPTION ITEMS
-            # ================================================================
-            # If this item was marked for skipping (consumed as caption),
-            # don't process it again
-            # ================================================================
-            if idx in skip_indices:
-                continue
-
-            # Extract item and level
-            item = entry["item"]
-            level = entry["level"]
-
-            # Look ahead one item (for caption detection)
-            next_item = items[idx + 1]["item"] if idx + 1 < len(items) else None
-
-            # ================================================================
-            # DISPATCH TO APPROPRIATE PROCESSOR
-            # ================================================================
-            # Type-based routing - send each item to its specialized processor
-            # ================================================================
-
-            # SECTION HEADERS
-            if isinstance(item, SectionHeaderItem):
-                output, global_breadcrumbs = process_header(
-                    item, page_num, level, global_breadcrumbs
-                )
-                page_outputs.append(output)
-
-            # TEXT ITEMS (try special handling first)
-            elif isinstance(item, TextItem):
-                # Try code block detection first
-                special_output = process_special_text(item, page_num, global_breadcrumbs)
-
-                if special_output:
-                    # Was detected as code
-                    page_outputs.append(special_output)
-                else:
-                    # Regular text paragraph
-                    output = process_text(item, page_num, global_breadcrumbs)
-                    if output:  # Empty string means "skip" (too short)
-                        page_outputs.append(output)
-
-            # LIST ITEMS
-            elif isinstance(item, ListItem):
-                output = process_list(item, page_num, global_breadcrumbs)
-                page_outputs.append(output)
-
-            # IMAGES/FIGURES
-            elif isinstance(item, PictureItem):
-                output, image_counter = process_image(
-                    item, doc, page_num, doc_output_dir,
-                    image_counter, openai_client, global_breadcrumbs, next_item
-                )
-
-                if output:
-                    page_outputs.append(output)
-                    page_image_count += 1
-
-                    # Mark next item for skipping if it was used as caption
-                    if next_item and isinstance(next_item, TextItem):
-                        # Check caption patterns
-                        text = next_item.text.strip()
-                        if (text.startswith(('Exhibit', 'Figure', 'Table', 'Chart', 'Fig', 'Source:')) or
-                            'Source:' in text or (len(text) < 200 and ':' in text)):
-                            skip_indices.add(idx + 1)
-
-            # TABLES
-            elif isinstance(item, TableItem):
-                output, image_counter = process_table(
-                    item, doc, page_num, doc_output_dir,
-                    image_counter, openai_client, global_breadcrumbs, next_item
-                )
-
-                if output:
-                    page_outputs.append(output)
-                    page_table_count += 1
-
-                    # Mark next item for skipping if it was used as caption
-                    if next_item and isinstance(next_item, TextItem):
-                        text = next_item.text.strip()
-                        if (text.startswith(('Exhibit', 'Figure', 'Table', 'Chart', 'Source:')) or
-                            'Source:' in text or (len(text) < 200 and ':' in text)):
-                            skip_indices.add(idx + 1)
-
-        # ====================================================================
-        # WRITE PAGE FILE
-        # ====================================================================
-        # Join all output blocks with double newlines (Markdown convention)
-        # Write to page_{num}.md file
-        # ====================================================================
-        page_text = "\n\n".join(page_outputs)
+        # Write page .md to local disk.
         page_filename = f"page_{page_num}.md"
+        local_page    = doc_output_dir / "pages" / page_filename
+        local_page.write_text(page_text, encoding="utf-8")
 
-        with open(doc_output_dir / "pages" / page_filename, "w", encoding="utf-8") as f:
-            f.write(page_text)
+        # Upload page .md to S3.
+        if s3_client and s3_bucket:
+            try:
+                upload_to_s3(
+                    s3_client, s3_bucket,
+                    f"{effective_doc_id}/pages/{page_filename}",
+                    page_text.encode("utf-8"), "text/markdown",
+                )
+            except Exception as exc:
+                logger.error(
+                    "S3 page upload failed  file=%s  error=%s", page_filename, exc
+                )
 
-        # ====================================================================
-        # RECORD PAGE METADATA
-        # ====================================================================
-        # Store summary for this page in metadata.json
-        # Includes: page number, filename, breadcrumbs, counts
-        # ====================================================================
         metadata_pages.append({
-            "page": page_num,
-            "file": page_filename,
-            "breadcrumbs": list(global_breadcrumbs),  # Snapshot at end of page
-            "images": page_image_count,
-            "tables": page_table_count
+            "page":   page_num,
+            "file":   page_filename,
+            "images": img_count,
+            "tables": tbl_count,
         })
+        total_images += img_count
+        total_tables += tbl_count
 
-        # Update global counters
-        total_images += page_image_count
-        total_tables += page_table_count
+    elapsed = time.monotonic() - t_start
+    logger.info(
+        "[3/4] Complete  pages=%d  images=%d  tables=%d  elapsed=%.1fs",
+        len(pages_items), total_images, total_tables, elapsed,
+    )
 
-    # Summary of page processing
-    print(f"      SUCCESS: Processed {len(pages_items)} pages")
-    print(f"         Images: {total_images}")
-    print(f"         Tables: {total_tables}")
-
-    # ========================================================================
-    # STEP 4: SAVE METADATA INDEX
-    # ========================================================================
-    # Create metadata.json - acts as manifest for this document
-    #
-    # Why metadata.json?
-    # - Index of all pages (for iteration)
-    # - Processing timestamp (for cache invalidation)
-    # - Element counts (for quality checks)
-    # - Tool version (for reproducibility)
-    # ========================================================================
-    print("   [4/4] Saving metadata...")
-
+    # ── [4/4] Metadata ─────────────────────────────────────────────────────────
+    logger.info("[4/4] Writing metadata…")
     metadata = {
-        "file": pdf_path.name,                # Original PDF filename
-        "processed": datetime.now().isoformat(),  # When we processed it
-        "tool": "Docling Simple Bounded",    # Which extractor version
-        "pages": metadata_pages,              # Per-page summaries
-        "total_images": total_images,         # Global counts
-        "total_tables": total_tables
+        "file":              pdf_path.name,
+        "doc_id":            effective_doc_id,
+        "processed":         datetime.now().isoformat(),
+        "tool":              "docling_bounded_extractor_v5_async",
+        "elapsed_seconds":   round(elapsed, 2),
+        "pages":             metadata_pages,
+        "total_images":      total_images,
+        "total_tables":      total_tables,
     }
 
-    with open(doc_output_dir / "metadata.json", "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    meta_path = doc_output_dir / "metadata.json"
+    meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
-    print(f"      SUCCESS: Metadata saved")
+    if s3_client and s3_bucket:
+        try:
+            upload_to_s3(
+                s3_client, s3_bucket,
+                f"{effective_doc_id}/metadata.json",
+                json.dumps(metadata, indent=2).encode("utf-8"), "application/json",
+            )
+            logger.info(
+                "metadata.json uploaded to s3://%s/%s/metadata.json",
+                s3_bucket, effective_doc_id,
+            )
+        except Exception as exc:
+            logger.error("S3 metadata upload failed: %s", exc)
 
-    # ========================================================================
-    # COMPLETION SUMMARY
-    # ========================================================================
-    # Print final summary with key statistics
-    # Makes it easy to verify extraction at a glance
-    # ========================================================================
-    print(f"\n{'='*70}")
-    print(f"EXTRACTION COMPLETE")
-    print(f"{'='*70}")
-    print(f"Output: {doc_output_dir}")
-    print(f"Pages: {len(metadata_pages)}")
-    print(f"Images: {total_images}")
-    print(f"Tables: {total_tables}")
-    print(f"{'='*70}\n")
+    logger.info("=" * 60)
+    logger.info("EXTRACTION COMPLETE  %s", pdf_path.name)
+    logger.info("  Pages:  %d", len(metadata_pages))
+    logger.info("  Images: %d", total_images)
+    logger.info("  Tables: %d", total_tables)
+    logger.info("  Time:   %.1f s", elapsed)
+    logger.info("=" * 60)
 
     return metadata
 
 
-def process_batch(input_path: Path, output_base_dir: Path):
-    """
-    Entry point for processing a single PDF or a directory of PDFs.
-
-    BATCH PROCESSING BEHAVIOR
-    =========================
-
-    Single File Mode:
-    - input_path is a .pdf file → process that file
-
-    Directory Mode:
-    - input_path is a directory → glob all *.pdf files
-    - Process each PDF sequentially (not parallel)
-    - Failed PDFs don't abort the batch (isolated failures)
-
-    Why Not Parallel?
-    ================
-
-    We could process multiple PDFs in parallel for speed,
-    but we don't because:
-    - OpenAI rate limits (parallel requests hit limits faster)
-    - Memory usage (Docling uses ~1-2GB per PDF)
-    - Simpler error handling (failures are isolated)
-    - Good enough (30-60s per PDF, most batches are small)
-
-    If you need parallel processing:
-    - Use Python multiprocessing
-    - Add queue for OpenAI rate limiting
-    - Monitor memory usage carefully
-
-    Error Handling Strategy:
-    =======================
-
-    Each PDF is wrapped in try/except:
-    - Success: Add to successful list
-    - Failure: Log error, add to failed list, CONTINUE
-
-    Why continue on failure?
-    If you have 100 PDFs and #37 is corrupted:
-    ✓ Process 99 successfully
-    ✓ Report 1 failure
-    ✗ Don't abort entire batch!
-
-    This "isolated failure" pattern is critical for batch jobs!
-
-    Args:
-        input_path: Path to:
-            - Single .pdf file, OR
-            - Directory containing .pdf files
-
-        output_base_dir: Root directory for all output
-            Each PDF gets its own subdirectory
-
-    Returns:
-        None (prints summary table at end)
-
-    Example Execution:
-    ==================
-
-    $ python script.py ./clinical_trials/
-
-    ======================================================================
-    BATCH PROCESSING: 20 PDF(s)
-    ======================================================================
-
-    [1/20] trial_001.pdf
-    Processing: trial_001.pdf
-    ...
-    EXTRACTION COMPLETE
-
-    [2/20] trial_002.pdf
-    Processing: trial_002.pdf
-    ...
-    ERROR - FAILED: Corrupt PDF
-
-    [3/20] trial_003.pdf
-    ...
-
-    ======================================================================
-    BATCH SUMMARY
-    ======================================================================
-    Successful: 19/20
-    Failed: 1/20
-
-    Successfully processed:
-       [OK] trial_001.pdf
-       [OK] trial_003.pdf
-       ...
-
-    Failed to process:
-       [FAIL] trial_002.pdf
-    ======================================================================
-    """
-    # ========================================================================
-    # VALIDATE INPUT PATH
-    # ========================================================================
-    if not input_path.exists():
-        print(f"\nERROR: Path not found: {input_path}")
-        return
-
-    # ========================================================================
-    # DETERMINE PROCESSING MODE
-    # ========================================================================
-    if input_path.is_file():
-        # SINGLE FILE MODE
-        # Check that it's actually a PDF
-        if input_path.suffix.lower() != '.pdf':
-            print(f"\nERROR: Not a PDF file: {input_path}")
-            return
-        pdf_files = [input_path]
-    else:
-        # DIRECTORY MODE
-        # Glob all PDFs (non-recursive - subdirectories ignored)
-        pdf_files = list(input_path.glob("*.pdf"))
-
-        if not pdf_files:
-            print(f"\nERROR: No PDF files found in: {input_path}")
-            return
-
-    # ========================================================================
-    # INITIALIZE OPENAI CLIENT
-    # ========================================================================
-    # Create client once and reuse across all PDFs
-    # This is more efficient than creating new client per PDF
-    #
-    # Will raise exception if OPENAI_API_KEY not set
-    # Better to fail here than after processing starts!
-    # ========================================================================
-    try:
-        openai_client = OpenAI()
-    except Exception as e:
-        print(f"\nERROR: OpenAI client initialization failed: {str(e)}")
-        print("NOTE: Set OPENAI_API_KEY environment variable")
-        print("      export OPENAI_API_KEY=sk-...")
-        sys.exit(1)
-
-    # ========================================================================
-    # BATCH PROCESSING HEADER
-    # ========================================================================
-    print(f"\n{'='*70}")
-    print(f"BATCH PROCESSING: {len(pdf_files)} PDF(s)")
-    print(f"{'='*70}")
-
-    # Tracking lists
-    successful = []  # Successfully processed PDFs
-    failed = []      # Failed PDFs
-
-    # ========================================================================
-    # PROCESS EACH PDF
-    # ========================================================================
-    for idx, pdf_path in enumerate(pdf_files, 1):
-        print(f"\n[{idx}/{len(pdf_files)}] {pdf_path.name}")
-
-        try:
-            # ================================================================
-            # PROCESS PDF
-            # ================================================================
-            # This is where the magic happens!
-            # If successful, metadata is returned (we don't use it here)
-            # ================================================================
-            process_pdf(pdf_path, output_base_dir, openai_client)
-
-            # Success! Add to successful list
-            successful.append(pdf_path.name)
-
-        except Exception as e:
-            # ================================================================
-            # HANDLE PER-PDF ERRORS
-            # ================================================================
-            # Don't let one bad PDF abort the entire batch!
-            # Log the error and continue to next PDF
-            # ================================================================
-            print(f"\nERROR - FAILED: {str(e)}")
-            failed.append(pdf_path.name)
-
-    # ========================================================================
-    # BATCH SUMMARY
-    # ========================================================================
-    # Print summary table showing success/failure breakdown
-    # Useful for monitoring and alerting in production
-    # ========================================================================
-    print(f"\n{'='*70}")
-    print(f"BATCH SUMMARY")
-    print(f"{'='*70}")
-    print(f"Successful: {len(successful)}/{len(pdf_files)}")
-    print(f"Failed: {len(failed)}/{len(pdf_files)}")
-
-    # List successful files
-    if successful:
-        print("\nSuccessfully processed:")
-        for name in successful:
-            print(f"   [OK] {name}")
-
-    # List failed files
-    if failed:
-        print("\nFailed to process:")
-        for name in failed:
-            print(f"   [FAIL] {name}")
-
-    print(f"{'='*70}\n")
-
-
-# =============================================================================
+# ==============================================================================
 # CLI ENTRY POINT
-# =============================================================================
-#
-# This is where Python execution begins when you run:
-# $ python docling_bounded_extractor.py <args>
-#
-# =============================================================================
+# ==============================================================================
 
-def main():
+def main() -> None:
     """
-    Parse CLI arguments and kick off batch processing.
+    Command-line interface for running the extractor on one PDF or a directory.
 
-    This function wraps the entire pipeline in error handling so:
-    - KeyboardInterrupt (Ctrl+C) exits cleanly
-    - Unexpected exceptions print nice error messages
-    - Exit codes signal success/failure to calling scripts
+    Usage examples:
+      # Single PDF, local output only:
+      python docling_pdf_extractor.py protocol.pdf
 
-    Command Line Interface:
-    ======================
+      # Single PDF with S3 upload:
+      python docling_pdf_extractor.py protocol.pdf \\
+          --bucket my-rag-bucket --doc-id trial-001
 
-    python script.py PATH [--output DIR]
+      # Entire directory of PDFs:
+      python docling_pdf_extractor.py ./pdfs/ \\
+          --output ./extracted --bucket my-rag-bucket
 
-    Arguments:
-    - PATH: Single PDF file OR directory of PDFs (required)
-    - --output: Output directory (optional, default: ./extracted_docs_bounded)
-
-    Examples:
-    --------
-
-    # Process single PDF
-    python script.py clinical_trial.pdf
-
-    # Process directory
-    python script.py ./clinical_trials/
-
-    # Custom output directory
-    python script.py ./pdfs/ --output ./my_output
-
-    Exit Codes:
-    ----------
-    0 = Success
-    1 = Error (file not found, API failure, keyboard interrupt, etc.)
-
-    Why exit codes matter?
-    CI/CD pipelines check exit codes to know if job succeeded!
-    Example: GitHub Actions fails the workflow if exit code != 0
+    The --doc-id flag controls the S3 key prefix.  If omitted, the PDF
+    filename stem is used.  For batch processing, each PDF gets its own
+    stem-based prefix automatically.
     """
-    # ========================================================================
-    # ARGUMENT PARSING
-    # ========================================================================
-    # argparse provides nice CLI with --help, error messages, etc.
-    # ========================================================================
     parser = argparse.ArgumentParser(
-        description="Docling PDF Extractor with Boundary Markers",
-        epilog="Example: python script.py ./pdfs/ --output ./output"
+        description="Docling Boundary PDF Extractor v5 (Async)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s protocol.pdf\n"
+            "  %(prog)s protocol.pdf --bucket my-bucket --doc-id trial-001\n"
+            "  %(prog)s ./pdfs/ --output ./out --bucket my-bucket"
+        ),
     )
-
-    # Positional argument: path (required)
-    parser.add_argument(
-        "path",
-        type=Path,
-        help="Path to a single PDF file, or a directory containing PDFs"
-    )
-
-    # Optional argument: output directory
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path(OUTPUT_DIR),
-        help=f"Root output directory (default: {OUTPUT_DIR})"
-    )
-
+    parser.add_argument("path",      type=Path,
+                        help="PDF file or directory containing PDFs")
+    parser.add_argument("--output",  type=Path, default=Path(OUTPUT_DIR),
+                        help="Local output root directory")
+    parser.add_argument("--bucket",  type=str,  default="",
+                        help="S3 bucket name (omit for local-only)")
+    parser.add_argument("--doc-id",  type=str,  default="",
+                        help="S3 key prefix / document ID")
+    parser.add_argument("--region",  type=str,  default="us-east-1",
+                        help="AWS region for S3 client")
     args = parser.parse_args()
 
-    # ========================================================================
-    # EXECUTION WITH ERROR HANDLING
-    # ========================================================================
-    try:
-        # Run the batch processor!
-        process_batch(args.path, args.output)
+    # Initialise OpenAI async client.
+    # Reads OPENAI_API_KEY from environment automatically.
+    client = AsyncOpenAI()
 
-    except KeyboardInterrupt:
-        # User pressed Ctrl+C
-        # Exit gracefully without scary traceback
-        print("\n\nWARNING: Interrupted by user (Ctrl+C)")
+    # Initialise S3 client only when a bucket is specified.
+    s3_client = None
+    if args.bucket:
+        s3_client = boto3.client("s3", region_name=args.region)
+        logger.info("S3 target: s3://%s/", args.bucket)
+
+    # Resolve PDF file list.
+    if args.path.is_file():
+        pdf_files = [args.path]
+    elif args.path.is_dir():
+        pdf_files = sorted(args.path.glob("*.pdf"))
+    else:
+        logger.error("Path not found: %s", args.path)
         sys.exit(1)
 
-    except Exception as e:
-        # Unexpected fatal error
-        # Print clean error message and exit with error code
-        print(f"\n\nERROR: Fatal error: {str(e)}")
-        print("\nPlease check:")
-        print("  1. PDF file is not corrupted")
-        print("  2. OPENAI_API_KEY is set correctly")
-        print("  3. Sufficient disk space available")
-        print("  4. Network connection is stable")
+    if not pdf_files:
+        logger.error("No PDF files found at: %s", args.path)
         sys.exit(1)
 
+    logger.info("Found %d PDF file(s) to process", len(pdf_files))
 
-# =============================================================================
-# SCRIPT EXECUTION
-# =============================================================================
-#
-# The if __name__ == "__main__" pattern ensures main() only runs when
-# this file is executed directly, NOT when imported as a module.
-#
-# Why?
-# - Allows other scripts to import functions from this file
-# - Clean separation between library code and CLI code
-# - Standard Python practice
-#
-# =============================================================================
+    ok_count   = 0
+    fail_count = 0
+
+    for pdf in pdf_files:
+        try:
+            asyncio.run(
+                process_pdf(
+                    pdf_path=pdf,
+                    output_base_dir=args.output,
+                    client=client,
+                    s3_client=s3_client,
+                    s3_bucket=args.bucket,
+                    doc_id=args.doc_id or pdf.stem,
+                )
+            )
+            ok_count += 1
+        except Exception as exc:
+            logger.error("FAILED  %s: %s", pdf.name, exc)
+            fail_count += 1
+
+    if len(pdf_files) > 1:
+        logger.info(
+            "Batch complete  success=%d  failed=%d  total=%d",
+            ok_count, fail_count, len(pdf_files),
+        )
+
 
 if __name__ == "__main__":
     main()
-
-
-# =============================================================================
-# SUMMARY FOR STUDENTS
-# =============================================================================
-#
-# This script demonstrates several advanced programming concepts:
-#
-# 1. FUNCTIONAL PROGRAMMING
-#    - Pure functions (processors have no side effects)
-#    - Function composition (small functions combined for complex behavior)
-#    - Immutable data (Pass data through pipeline, don't mutate)
-#
-# 2. STRUCTURED DATA
-#    - Boundary markers (machine-readable metadata in Markdown)
-#    - JSON output (metadata.json for downstream consumers)
-#    - Hierarchical organization (breadcrumbs for context)
-#
-# 3. AI INTEGRATION
-#    - Vision API (image analysis with GPT-4)
-#    - Text API (table analysis with GPT-4)
-#    - Fallback strategies (text-first, image-second for tables)
-#
-# 4. ERROR HANDLING
-#    - Per-file isolation (one failure doesn't break batch)
-#    - Graceful degradation (missing captions, failed AI → continue)
-#    - Clear error messages (actionable guidance for users)
-#
-# 5. BATCH PROCESSING
-#    - Sequential processing (simple, reliable)
-#    - Progress tracking (numbered file output)
-#    - Summary reporting (success/failure table)
-#
-# Key Takeaways:
-# ✓ Build small, focused functions (single responsibility)
-# ✓ Handle errors gracefully (don't crash on bad input)
-# ✓ Make output machine-readable (JSON, structured tags)
-# ✓ Provide clear logging (users need to know what's happening)
-# ✓ Test edge cases (empty files, corrupt PDFs, API failures)
-#
-# Questions for Students:
-#
-# 1. Why use boundary markers instead of just saving clean Markdown?
-#    → Enables precise chunk extraction without re-parsing
-#
-# 2. Why try text export before image export for tables?
-#    → Faster, cheaper, lossless (text is always preferred when it works)
-#
-# 3. Why not process PDFs in parallel for speed?
-#    → OpenAI rate limits, memory usage, simpler error handling
-#
-# 4. Why track breadcrumbs across pages?
-#    → Provides semantic context (which section are we in?)
-#
-# 5. How would you modify this for scanned PDFs?
-#    → Set do_ocr=True in pipeline options (enables OCR)
-#
-# =============================================================================

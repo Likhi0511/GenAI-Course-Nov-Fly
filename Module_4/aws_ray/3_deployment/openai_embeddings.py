@@ -98,23 +98,28 @@ MODEL_PRICING = {
 # Client Initialization
 # ===========================================================================
 
-def init_openai_client() -> OpenAI:
+def init_openai_client(api_key: str = None) -> OpenAI:
     """
-    Create and return an OpenAI client authenticated via environment variable.
+    Create and return an OpenAI client.
 
-    Using an env var (OPENAI_API_KEY) rather than a CLI argument keeps the
-    secret out of shell history and process listings.
+    API key resolution order:
+      1. Explicit api_key argument — used by the Ray pipeline to pass the
+         pre-parsed key from config.OPENAI_API_KEY.  config._parse_secret()
+         handles ECS Secrets Manager injecting the key as a JSON object
+         {"OPENAI_API_KEY": "sk-..."} instead of a plain string, which would
+         otherwise cause a 401 AuthenticationError here.
+      2. OPENAI_API_KEY environment variable — fallback for local CLI use.
 
     Raises:
-        SystemExit if the env var is not set — fail fast before any API calls.
+        SystemExit if no key is found by either method.
     """
-    api_key = os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        logger.error("OPENAI_API_KEY environment variable not set.")
-        logger.error("Run: export OPENAI_API_KEY='sk-...'")
+    resolved_key = api_key or os.getenv('OPENAI_API_KEY')
+    if not resolved_key:
+        logger.error("OPENAI_API_KEY not found.")
+        logger.error("Pass it explicitly or run: export OPENAI_API_KEY='sk-...'")
         sys.exit(1)
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=resolved_key)
     logger.info("OpenAI client initialised")
     return client
 
@@ -244,17 +249,40 @@ def generate_embeddings(
     for i in tqdm(range(0, len(chunks), batch_size), desc="Embedding batches"):
         batch = chunks[i:i + batch_size]
 
-        # Pick the most privacy-appropriate text field available in each chunk
-        texts = [
-            chunk.get('content_sanitised') or chunk.get('content', '')
+        # Pick the most privacy-appropriate text field available in each chunk.
+        # content_sanitised = PII-redacted text from Stage 3 (preferred).
+        # content           = original text (fallback if no redaction was done).
+        #
+        # EMPTY TEXT GUARD:
+        # OpenAI returns 400 Bad Request if any text in the batch is empty or
+        # whitespace-only. This can happen when a table/image chunk has no
+        # ai_description (Stage 1 enrichment failed for that asset).
+        # We filter those chunks out here rather than letting one bad chunk
+        # crash the entire batch of N chunks.
+        texts_and_chunks = [
+            (chunk.get('content_sanitised') or chunk.get('content', ''), chunk)
             for chunk in batch
         ]
+        valid   = [(t, c) for t, c in texts_and_chunks if t and t.strip()]
+        skipped = len(batch) - len(valid)
+        if skipped:
+            logger.warning(
+                "Batch %d: skipped %d chunk(s) with empty content — "
+                "these will be missing from embeddings output.",
+                i // batch_size + 1, skipped,
+            )
+        if not valid:
+            logger.warning("Batch %d: all chunks empty — skipping API call.", i // batch_size + 1)
+            continue
+
+        texts         = [t for t, _ in valid]
+        valid_chunks  = [c for _, c in valid]
 
         try:
             embeddings, tokens = call_embeddings_api(client, texts, model, dimensions)
             total_tokens += tokens
 
-            for chunk, embedding in zip(batch, embeddings):
+            for chunk, embedding in zip(valid_chunks, embeddings):
                 enriched = chunk.copy()
 
                 # The embedding vector — already a plain Python list from the API,

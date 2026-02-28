@@ -1,7 +1,7 @@
 [
   {
     "ParameterKey": "S3BucketName",
-    "ParameterValue": "ray-ingestion-prudhvi-3-feb-2026"
+    "ParameterValue": "ray-ingestion-prudhvi-13-feb-2026"
   },
   {
     "ParameterKey": "NodeInstanceType",
@@ -46,13 +46,5 @@
   {
     "ParameterKey": "MaxRayWorkers",
     "ParameterValue": "10"
-  },
-  {
-    "ParameterKey": "OpenAIApiKeySecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-openai-6rzhmk"
-  },
-  {
-    "ParameterKey": "PineconeApiKeySecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:107282186797:secret:ray-pipeline-pinecone-jxAGWv"
   }
 ]

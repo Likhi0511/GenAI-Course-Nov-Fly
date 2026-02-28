@@ -132,6 +132,7 @@ class PipelineConfig:
     # If it is stored as JSON e.g. {"OPENAI_API_KEY": "sk-..."},
     # _parse_secret extracts the value automatically — fixing the 401 error.
     OPENAI_API_KEY: str = _parse_secret('OPENAI_API_KEY')
+    print("OPENAI_API_KEY key",OPENAI_API_KEY)
     PINECONE_API_KEY: str = _parse_secret('PINECONE_API_KEY')
 
     POLLING_INTERVAL: int = int(os.getenv('POLLING_INTERVAL', '30'))
