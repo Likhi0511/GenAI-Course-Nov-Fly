@@ -62,7 +62,7 @@ from datetime import datetime
 # v5 change: module renamed from docling_bounded_extractor → docling_pdf_extractor.
 # process_pdf is now async (asyncio.run() required at each call site).
 # Client parameter renamed openai_client → client and must be AsyncOpenAI, not OpenAI.
-from docling_pdf_extractor import process_pdf as bounded_process_pdf
+from docling_bounded_extractor import process_pdf as bounded_process_pdf
 from openai import AsyncOpenAI as _AsyncOpenAI  # v5: async client required by process_pdf
 
 # Stage 2 — Boundary-aware chunker that:

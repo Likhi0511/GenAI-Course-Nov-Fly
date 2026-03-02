@@ -375,16 +375,45 @@ async def enrich_chunk_async(
             STATS['pii_replacements'] += 1
 
         # --- Named Entity Recognition ---
-        # Stored as a dict of lists:
-        # { "PERSON": ["John Smith"], "MONEY": ["$5.5M"], "GPE": ["USA"] }
-        chunk['metadata']['entities'] = analysis.get('entities', {})
+        # Expected format (dict of lists):
+        #   { "PERSON": ["John Smith"], "MONEY": ["$5.5M"], "GPE": ["USA"] }
+        #
+        # GPT-4o-mini sometimes returns entities as a list of objects instead:
+        #   [{"type": "PERSON", "value": "John Smith"}, ...]
+        # Both formats are normalised to the dict-of-lists schema here so
+        # downstream stages always receive a consistent structure.
+        raw_entities = analysis.get('entities', {})
+        if isinstance(raw_entities, list):
+            # Convert list-of-objects → dict-of-lists
+            normalised: Dict = {}
+            for item in raw_entities:
+                if isinstance(item, dict):
+                    etype  = str(item.get('type', item.get('label', item.get('entity', 'UNKNOWN'))))
+                    evalue = item.get('value', item.get('text', item.get('name', str(item))))
+                    normalised.setdefault(etype, []).append(evalue)
+            raw_entities = normalised
+        elif not isinstance(raw_entities, dict):
+            # Unexpected format (string, int, etc.) — discard gracefully
+            logger.warning('Unexpected entities format: %s — discarding', type(raw_entities).__name__)
+            raw_entities = {}
+
+        chunk['metadata']['entities'] = raw_entities
         STATS['entities_extracted'] += sum(
-            len(v) for v in analysis.get('entities', {}).values()
+            len(v) if isinstance(v, list) else 1
+            for v in raw_entities.values()
         )
 
         # --- Key Phrases ---
         # Top-5 noun phrases capturing the financial/business signal.
-        chunk['metadata']['key_phrases'] = analysis.get('key_phrases', [])
+        # Guard: model occasionally returns a dict or comma-joined string instead of a list.
+        raw_phrases = analysis.get('key_phrases', [])
+        if isinstance(raw_phrases, str):
+            raw_phrases = [p.strip() for p in raw_phrases.split(',') if p.strip()]
+        elif isinstance(raw_phrases, dict):
+            raw_phrases = list(raw_phrases.values())
+        elif not isinstance(raw_phrases, list):
+            raw_phrases = []
+        chunk['metadata']['key_phrases'] = raw_phrases
 
     # ------------------------------------------------------------------
     # Stage 2: Local regex extraction (synchronous, instant, free)

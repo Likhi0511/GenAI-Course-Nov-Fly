@@ -114,7 +114,10 @@ class PipelineConfig:
 
     # Stage 4: Embedding Settings
     # Note: ray_tasks.py specifically looks for 'OPENAI_MODEL' and 'OPENAI_DIMENSIONS'
-    OPENAI_MODEL: str = 'text-embedding-ada-002'
+    # text-embedding-3-small: 1536 dims, $0.00002/1K tokens (5× cheaper than ada-002),
+    # supports the 'dimensions' parameter for truncation, better retrieval quality.
+    # text-embedding-ada-002 is legacy — does NOT support 'dimensions' param → HTTP 400.
+    OPENAI_MODEL: str = 'text-embedding-3-small'
     OPENAI_DIMENSIONS: int = 1536
     EMBEDDING_BATCH_SIZE: int = 100
 
@@ -132,7 +135,6 @@ class PipelineConfig:
     # If it is stored as JSON e.g. {"OPENAI_API_KEY": "sk-..."},
     # _parse_secret extracts the value automatically — fixing the 401 error.
     OPENAI_API_KEY: str = _parse_secret('OPENAI_API_KEY')
-    print("OPENAI_API_KEY key",OPENAI_API_KEY)
     PINECONE_API_KEY: str = _parse_secret('PINECONE_API_KEY')
 
     POLLING_INTERVAL: int = int(os.getenv('POLLING_INTERVAL', '30'))

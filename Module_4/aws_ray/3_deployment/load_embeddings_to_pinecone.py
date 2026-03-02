@@ -74,6 +74,73 @@ DEFAULT_REGION     = 'us-east-1'   # Pinecone free tier lives here
 DEFAULT_BATCH_SIZE = 100            # Pinecone recommends 100–200 per upsert
 METADATA_TEXT_LIMIT = 10_000       # chars — well under Pinecone's 40KB per-vector limit
 
+# ---------------------------------------------------------------------------
+# Unicode characters commonly found in clinical/pharma PDFs that are
+# outside Latin-1 and break Pinecone's HTTP request serialisation.
+# Key offender: \uf0b7 = Windows Wingdings bullet point (U+F0B7, Private Use Area).
+# ---------------------------------------------------------------------------
+_PUA_REPLACEMENTS = {
+    '\uf0b7': '-',          # Wingdings bullet  → hyphen-dash (latin-1 safe)
+    '\uf0a7': '-',          # Wingdings bullet2 → hyphen-dash (latin-1 safe)
+    '\uf0d8': '-',          # Wingdings bullet3 → hyphen-dash (latin-1 safe)
+    '\uf076': '-',          # Wingdings bullet4 → hyphen-dash (latin-1 safe)
+    '\uf0de': '>',          # Wingdings arrow   → >
+    '\uf0e0': '>',          # Wingdings arrow2  → >
+    '\uf020': ' ',          # Wingdings space   → space
+    '\u0000': '',           # null byte         → remove
+    '\ufeff': '',           # BOM               → remove
+}
+
+
+def sanitize_text(value: str) -> str:
+    """
+    Make a string safe for Pinecone's HTTP request body (Latin-1 compatible).
+
+    WHY THIS IS NEEDED
+    ------------------
+    Pinecone's SDK (via urllib3/httpx) serialises the upsert request body.
+    Depending on the SDK version and transport layer, strings that contain
+    characters outside Latin-1 (codepoint > 255) can raise:
+
+        UnicodeEncodeError: 'latin-1' codec can't encode character '\\uf0b7'
+
+    The most common offender in clinical/pharma PDFs is U+F0B7 — a Windows
+    Private Use Area (PUA) bullet point from the Wingdings/Symbol font that
+    Docling correctly preserves from the original PDF.
+
+    FIX STRATEGY (three-pass)
+    -------------------------
+    1. Named replacements  — swap known PUA/control characters with clean
+                             Unicode equivalents (bullets → •, etc.)
+    2. encode/decode strip — any remaining non-Latin-1 character is dropped
+                             via errors='ignore'.  This is a safety net only;
+                             pass 1 should catch all common clinical PDF chars.
+    3. Strip whitespace    — normalise leading/trailing whitespace that may
+                             have been introduced by the replacements.
+
+    Args:
+        value: raw string from chunk content or metadata
+
+    Returns:
+        Sanitised string safe for Pinecone upsert.
+    """
+    if not isinstance(value, str):
+        return value
+
+    # Pass 1 — named replacements for known PUA / control characters
+    for bad, good in _PUA_REPLACEMENTS.items():
+        if bad in value:
+            value = value.replace(bad, good)
+
+    # Pass 2 — drop any remaining non-Latin-1 characters (safety net)
+    # encode to latin-1 ignoring errors, decode back to str
+    value = value.encode('latin-1', errors='ignore').decode('latin-1')
+
+    # Pass 3 — normalise whitespace
+    return value.strip()
+
+
+
 
 # ===========================================================================
 # Pinecone Client
@@ -304,7 +371,7 @@ def prepare_vectors(chunks: list, namespace: str = None) -> list:
         chunk_id = (
             chunk.get('id')
             or chunk.get('chunk_id')
-            or 'chunk_' + hashlib.md5(text.encode()).hexdigest()[:16]
+            or 'chunk_' + hashlib.md5(sanitize_text(text).encode()).hexdigest()[:16]
         )
 
         # --- Embedding ---
@@ -320,18 +387,18 @@ def prepare_vectors(chunks: list, namespace: str = None) -> list:
 
         # Text content — truncated to stay under 40KB Pinecone metadata limit
         if text:
-            vector_meta['text'] = text[:METADATA_TEXT_LIMIT]
+            vector_meta['text'] = sanitize_text(text[:METADATA_TEXT_LIMIT])
 
         # Source document provenance
-        if 'source'       in meta: vector_meta['source']       = str(meta['source'])
+        if 'source'       in meta: vector_meta['source']       = sanitize_text(str(meta['source']))
         if 'page_number'  in meta: vector_meta['page']         = int(meta['page_number'])
-        if 'breadcrumbs'  in meta: vector_meta['breadcrumbs']  = str(meta['breadcrumbs'])
+        if 'breadcrumbs'  in meta: vector_meta['breadcrumbs']  = sanitize_text(str(meta['breadcrumbs']))
         if 'char_count'   in meta: vector_meta['char_count']   = int(meta['char_count'])
         if 'pii_redacted' in meta: vector_meta['pii_redacted'] = bool(meta['pii_redacted'])
 
         # key_phrases: list → comma-joined string (Pinecone requires scalar metadata)
         if 'key_phrases' in meta:
-            vector_meta['key_phrases'] = ', '.join(meta['key_phrases'][:10])
+            vector_meta['key_phrases'] = sanitize_text(', '.join(meta['key_phrases'][:10]))
 
         # num_atomic_chunks: useful for scoring chunk density
         if 'num_atomic_chunks' in meta:

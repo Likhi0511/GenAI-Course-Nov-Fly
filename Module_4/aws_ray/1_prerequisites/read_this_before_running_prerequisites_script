@@ -14,3 +14,35 @@ docker ps
 # check_prerequisites.py should be alongside the 2_cloudformation/ and 3_deployment/ folders
 ls
 # Should see: check_prerequisites.py  2_cloudformation/  3_deployment/
+
+
+Step 1: Modify CloudFormation Parameters File
+
+Open the cloudformation-parameters.json file.
+
+Locate the last two parameter keys in the file.
+
+Delete those last two parameter keys.
+
+Save the file.
+
+Step 2: Update Alert Email
+
+Modify the alert email configuration.
+
+Replace the existing email address with your updated email address.
+
+Step 3: Change the S3 Bucket
+
+Update the S3 bucket name to the required bucket.
+
+Ensure the bucket exists and proper permissions are configured.
+
+########## for windows users
+Step 4: Update Run Configuration
+
+Open the application’s run configuration.
+
+Add the following argument:
+
+PYTHONUTF8=1

@@ -190,11 +190,18 @@ def call_embeddings_api(
     Returns:
         Tuple of (list of embedding vectors, total tokens used in this call).
     """
-    response = client.embeddings.create(
-        model=model,
-        input=texts,
-        dimensions=dimensions
-    )
+    # The `dimensions` parameter is ONLY supported by text-embedding-3-* models.
+    # text-embedding-ada-002 (legacy) does NOT support it — passing it causes
+    # HTTP 400 Bad Request. Build the kwargs dict conditionally to handle both.
+    kwargs: Dict = {"model": model, "input": texts}
+    if "text-embedding-3" in model:
+        # text-embedding-3-small default: 1536 dims
+        # text-embedding-3-large default: 3072 dims
+        # Passing dimensions= allows reducing them for cheaper storage.
+        kwargs["dimensions"] = dimensions
+    # ada-002: fixed 1536 dims, no parameter accepted.
+
+    response = client.embeddings.create(**kwargs)
 
     # API returns embeddings in the same order as input — safe to zip directly
     embeddings = [item.embedding for item in response.data]
