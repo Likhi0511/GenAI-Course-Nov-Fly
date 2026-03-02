@@ -4,8 +4,51 @@ docling_pdf_extractor.py  —  Boundary-Based PDF Extraction Engine  v5
 ===============================================================================
 
 Author  : Prudhvi  |  Thoughtworks
-Version : v5  (Async + Production-Hardened)
+Version : v5.1  (Async + Production-Hardened)
 Stage   : 1 of 5  (Extract → Chunk → Enrich → Embed → Store)
+
+-------------------------------------------------------------------------------
+CHANGELOG
+-------------------------------------------------------------------------------
+
+v5.1  (current)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  FIX 1 — PERF  Docling converter cold-start eliminated                 │
+  │                                                                         │
+  │  Root cause:  create_docling_converter() was called inside process_pdf()│
+  │  on every document, reloading the RT-DETR layout model (~400 MB, ~15 s) │
+  │  and TableFormer ACCURATE (~150 MB, ~10 s) from disk on every Ray task. │
+  │                                                                         │
+  │  Fix:  Lazy process-level singleton get_converter().  The models are    │
+  │  loaded once per Ray worker process and reused for all documents on     │
+  │  that worker.  For 50 docs × 4 workers: 4 model loads instead of 50.  │
+  │  Saves ~25–40 s of pure initialization overhead per document.           │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  FIX 2 — BUG   process_code() return type annotation corrected         │
+  │                                                                         │
+  │  Was:   -> Tuple[str, Optional[str]]   (2-tuple)                        │
+  │  Is:    -> Tuple[str, str, str, List[str]]  (4-tuple: id/text/lang/bc)  │
+  │                                                                         │
+  │  The wrong annotation caused mypy/pyright to emit false-positive errors │
+  │  on every call-site in process_page() where the 4-tuple is unpacked.   │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  FIX 3 — BUG   tables/ output subdirectory now created at startup      │
+  │                                                                         │
+  │  pages/ and figures/ were created; tables/ was missing.                │
+  │  S3 table uploads worked (write directly to S3, not local disk) but    │
+  │  any future local table .md write would fail with FileNotFoundError.   │
+  │  Added mkdir alongside pages/ and figures/ for structural consistency. │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+v5.0
+  Original async production-hardened release.  RT-DETR layout analysis,
+  TableFormer ACCURATE table extraction, GPT-4o image/table enrichment,
+  GPT-4o-mini formula/code enrichment, boundary-marker wrapping, S3
+  upload per element, per-page asyncio.gather() concurrency.
 
 -------------------------------------------------------------------------------
 SINGLE RESPONSIBILITY
@@ -561,6 +604,91 @@ def create_docling_converter() -> DocumentConverter:
 
 
 # ==============================================================================
+# CONVERTER SINGLETON  (lazy — initialized once per worker process)
+# ==============================================================================
+#
+# WHY THIS MATTERS
+# ----------------
+# DocumentConverter.__init__() downloads and loads Docling's ML models:
+#   • RT-DETR layout model       (~400 MB, ~15 s to load from disk)
+#   • TableFormer ACCURATE mode  (~150 MB, ~10 s to load from disk)
+#   • EasyOCR (if do_ocr=True)   (~200 MB, ~15 s — disabled here)
+#
+# In a Ray worker process, each @ray.remote task invocation calls process_pdf()
+# for a new document.  Without this singleton, every document re-loads all
+# models from scratch — adding 25–40 s of pure initialization overhead per
+# document regardless of how fast the actual extraction runs.
+#
+# With the singleton the cost is paid ONCE per worker process (not per
+# document).  Ray reuses worker processes across tasks in the same cluster,
+# so for a batch of 50 documents using 4 workers:
+#
+#   Without singleton:  50 × 25 s  = 1 250 s  of model-loading time wasted
+#   With singleton:      4 × 25 s  =   100 s  of model-loading time (once per worker)
+#
+# THREAD SAFETY
+# -------------
+# Each Ray worker is a single-threaded Python process.  Ray's default task
+# executor dispatches one @ray.remote call at a time per worker, so there is
+# no concurrent access to _converter_instance within a process.
+# The lazy initialization is therefore safe without a lock.
+#
+# RESET (testing only)
+# --------------------
+# _reset_converter() forces re-initialization on the next get_converter() call.
+# Only needed in test suites that require a fresh converter state in the same
+# process.  Never called during normal pipeline operation.
+
+_converter_instance: Optional[DocumentConverter] = None
+
+
+def get_converter() -> DocumentConverter:
+    """
+    Return the process-level Docling DocumentConverter singleton.
+
+    Initializes on first call (lazy) and reuses the same instance on all
+    subsequent calls within the same Ray worker process.  Eliminates the
+    25–40 s model-loading cold start that would otherwise occur on every
+    document extraction.
+
+    Usage in process_pdf():
+        converter = get_converter()   # fast after first call
+        doc       = converter.convert(pdf_path).document
+
+    Returns:
+        The singleton DocumentConverter configured with:
+          • TableFormer ACCURATE (highest-fidelity table structure recognition)
+          • 216 DPI image rendering (3× scale, legible for GPT-4o Vision)
+          • do_ocr = False (born-digital PDFs — set True for scanned docs)
+    """
+    global _converter_instance
+    if _converter_instance is None:
+        logger.info(
+            "Initializing Docling DocumentConverter "
+            "(first document in this Ray worker — loading ML models)…"
+        )
+        t0 = time.monotonic()
+        _converter_instance = create_docling_converter()
+        logger.info(
+            "Docling converter ready — models loaded in %.1f s",
+            time.monotonic() - t0,
+        )
+    return _converter_instance
+
+
+def _reset_converter() -> None:
+    """
+    Force the singleton to be re-initialized on the next get_converter() call.
+
+    Only needed in test suites that require a fresh converter state in the
+    same process.  Not called during normal pipeline operation.
+    """
+    global _converter_instance
+    _converter_instance = None
+    logger.debug("Docling converter singleton reset (next call will re-initialize)")
+
+
+# ==============================================================================
 # ASYNC RETRY WRAPPER
 # ==============================================================================
 
@@ -1095,28 +1223,35 @@ def process_code(
     page: int,
     breadcrumbs: List[str],
     openai_client_sync,  # Kept as a placeholder; async call deferred to gather
-) -> Tuple[str, Optional[str]]:
+) -> Tuple[str, str, str, List[str]]:
     """
-    Extract a code block and prepare the async AI-description coroutine.
+    Extract a code block and return the data bundle needed for async enrichment.
 
-    Returns the boundary content string and the raw code text for async
-    enrichment.  The coroutine is NOT awaited here — it is collected into
-    the page-level asyncio.gather() call for concurrent execution.
+    Returns a 4-tuple rather than a completed boundary string because the AI
+    description call must be deferred — it is collected into the page-level
+    asyncio.gather() for concurrent execution alongside all other AI calls on
+    the page.  Awaiting it inline here would serialize the AI calls and
+    eliminate the concurrency benefit.
+
+    Return value unpacked in process_page() as:
+        item_id, text, language, bc = process_code(item, page, breadcrumbs, None)
 
     Note on language detection:
       Docling exposes item.code_language when it can identify the language
-      from context.  We use this directly rather than attempting our own
-      heuristic detection (no regex on keywords, no file extension guessing).
+      from context (e.g. from a preceding code-fence label or MIME type).
+      We use this directly rather than attempting heuristic detection —
+      no regex on keywords, no file extension guessing.
 
     Args:
         item              : TextItem with label DocItemLabel.CODE
         page              : current page number
         breadcrumbs       : current breadcrumb trail
-        openai_client_sync: unused in this function; kept for API symmetry
+        openai_client_sync: unused; kept for API symmetry with other processors
 
     Returns:
-        (partial boundary content without ai_description, raw code text)
-        The caller inserts ai_description after gathering all AI calls.
+        Tuple of (item_id, code_text, language, breadcrumbs_copy).
+        The caller uses these to assemble the boundary string after the
+        asyncio.gather() returns the AI description.
     """
     text     = item.text.strip()
     language = getattr(item, "code_language", None) or ""
@@ -1498,8 +1633,12 @@ async def process_pdf(
     doc_output_dir   = output_base_dir / pdf_path.stem
 
     # Create local output directories.
+    # tables/ mirrors the S3 layout ({doc_id}/tables/) and ensures any future
+    # local table-write code path works without FileNotFoundError.
+    # pages/ and figures/ are used by the per-page processing loop.
     (doc_output_dir / "pages").mkdir(parents=True, exist_ok=True)
     (doc_output_dir / "figures").mkdir(parents=True, exist_ok=True)
+    (doc_output_dir / "tables").mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 60)
     logger.info("Processing: %s", pdf_path.name)
@@ -1507,10 +1646,13 @@ async def process_pdf(
     logger.info("=" * 60)
 
     # ── [1/4] Docling layout analysis ─────────────────────────────────────────
-    # Docling's DocumentConverter runs synchronously — it is CPU/IO-bound
-    # and has no async API.  We run it in the main thread.
+    # get_converter() returns the process-level singleton.  On first call in
+    # this Ray worker process it loads the RT-DETR and TableFormer models
+    # (25–40 s).  On all subsequent documents in the same worker the already-
+    # loaded instance is returned immediately at near-zero cost.
+    # See the CONVERTER SINGLETON section above for the full cost analysis.
     logger.info("[1/4] Analysing PDF layout with Docling…")
-    converter = create_docling_converter()
+    converter = get_converter()
     doc       = converter.convert(pdf_path).document
     logger.info("[1/4] Layout analysis complete")
 
