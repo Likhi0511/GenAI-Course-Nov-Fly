@@ -768,10 +768,19 @@ def main():
         raw_addr = config.RAY_ADDRESS.strip() if config.RAY_ADDRESS else ""
         ray_addr = "auto" if not raw_addr else raw_addr
 
+        runtime_env = {
+            "env_vars": {
+                "PYTHONIOENCODING": "utf-8",
+                "LANG": "en_US.UTF-8",
+                "LC_ALL": "en_US.UTF-8"
+            }
+        }
+
         ray.init(
             address=ray_addr,        # "auto" on head node, "ray-head.local:6379" on workers
             namespace=config.RAY_NAMESPACE,  # Isolates this app's tasks from other Ray apps
             logging_level=config.LOG_LEVEL,  # Propagate log level to Ray internals
+            runtime_env=runtime_env
         )
 
         logger.info("✓ Ray initialised successfully")

@@ -163,6 +163,7 @@ from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 from tqdm import tqdm
 
+from utils import write_json_utf8
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -567,8 +568,10 @@ def save_results(
         'chunks': chunks,
     }
 
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(output_data, f, indent=2, ensure_ascii=False)
+    # with open(output_path, 'w', encoding='utf-8') as f:
+    #     json.dump(output_data, f, indent=2, ensure_ascii=False)
+    logger.info("Fix applied")
+    write_json_utf8(output_path, output_data)
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     logger.info("Saved to: %s (%.2f MB)", output_path, file_size_mb)
@@ -657,70 +660,70 @@ def run_pipeline(
 # CLI
 # ===========================================================================
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Generate OpenAI embeddings for enriched chunks  (Stage 4)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python openai_embeddings.py data/chunks_enriched.json
-  python openai_embeddings.py data/chunks_enriched.json --model text-embedding-3-large
-  python openai_embeddings.py data/chunks_enriched.json --dimensions 3072 --batch-size 200
-
-Cost reference:
-  text-embedding-3-small : $0.020 / 1M tokens  (1536 dims default)
-  text-embedding-3-large : $0.130 / 1M tokens  (3072 dims default)
-
-Stage 5 contract for embedding=None chunks:
-  if chunk.get('embedding') is None:
-      logger.warning("Skipping upsert — no embedding")
-      continue
-        """,
-    )
-    parser.add_argument(
-        'input_file',
-        help="Path to enriched chunks JSON (Stage 3 output)",
-    )
-    parser.add_argument(
-        '--model',
-        default=DEFAULT_MODEL,
-        choices=list(MODEL_PRICING.keys()),
-        help=f"Embedding model (default: {DEFAULT_MODEL})",
-    )
-    parser.add_argument(
-        '--dimensions',
-        type=int,
-        default=DEFAULT_DIMENSIONS,
-        help=f"Embedding dimensions (default: {DEFAULT_DIMENSIONS})",
-    )
-    parser.add_argument(
-        '--batch-size',
-        type=int,
-        default=DEFAULT_BATCH_SIZE,
-        help=f"Texts per API call (default: {DEFAULT_BATCH_SIZE}, max: 2048)",
-    )
-
-    args = parser.parse_args()
-
-    if not Path(args.input_file).exists():
-        print(f"ERROR: Input file not found: {args.input_file}")
-        sys.exit(1)
-
-    price = MODEL_PRICING.get(args.model, MODEL_PRICING[DEFAULT_MODEL])
-    print(f"\nModel      : {args.model}")
-    print(f"Dimensions : {args.dimensions}")
-    print(f"Pricing    : ${price:.3f} / 1M tokens")
-    print(f"Input      : {args.input_file}\n")
-
-    # Uncomment to add cost confirmation for interactive use:
-    # confirm = input("Proceed? (yes/no): ").strip().lower()
-    # if confirm != 'yes':
-    #     print("Cancelled.")
-    #     sys.exit(0)
-
-    run_pipeline(
-        input_file=args.input_file,
-        model=args.model,
-        dimensions=args.dimensions,
-        batch_size=args.batch_size,
-    )
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser(
+#         description="Generate OpenAI embeddings for enriched chunks  (Stage 4)",
+#         formatter_class=argparse.RawDescriptionHelpFormatter,
+#         epilog="""
+# Examples:
+#   python openai_embeddings.py data/chunks_enriched.json
+#   python openai_embeddings.py data/chunks_enriched.json --model text-embedding-3-large
+#   python openai_embeddings.py data/chunks_enriched.json --dimensions 3072 --batch-size 200
+#
+# Cost reference:
+#   text-embedding-3-small : $0.020 / 1M tokens  (1536 dims default)
+#   text-embedding-3-large : $0.130 / 1M tokens  (3072 dims default)
+#
+# Stage 5 contract for embedding=None chunks:
+#   if chunk.get('embedding') is None:
+#       logger.warning("Skipping upsert — no embedding")
+#       continue
+#         """,
+#     )
+#     parser.add_argument(
+#         'input_file',
+#         help="Path to enriched chunks JSON (Stage 3 output)",
+#     )
+#     parser.add_argument(
+#         '--model',
+#         default=DEFAULT_MODEL,
+#         choices=list(MODEL_PRICING.keys()),
+#         help=f"Embedding model (default: {DEFAULT_MODEL})",
+#     )
+#     parser.add_argument(
+#         '--dimensions',
+#         type=int,
+#         default=DEFAULT_DIMENSIONS,
+#         help=f"Embedding dimensions (default: {DEFAULT_DIMENSIONS})",
+#     )
+#     parser.add_argument(
+#         '--batch-size',
+#         type=int,
+#         default=DEFAULT_BATCH_SIZE,
+#         help=f"Texts per API call (default: {DEFAULT_BATCH_SIZE}, max: 2048)",
+#     )
+#
+#     args = parser.parse_args()
+#
+#     if not Path(args.input_file).exists():
+#         print(f"ERROR: Input file not found: {args.input_file}")
+#         sys.exit(1)
+#
+#     price = MODEL_PRICING.get(args.model, MODEL_PRICING[DEFAULT_MODEL])
+#     print(f"\nModel      : {args.model}")
+#     print(f"Dimensions : {args.dimensions}")
+#     print(f"Pricing    : ${price:.3f} / 1M tokens")
+#     print(f"Input      : {args.input_file}\n")
+#
+#     # Uncomment to add cost confirmation for interactive use:
+#     # confirm = input("Proceed? (yes/no): ").strip().lower()
+#     # if confirm != 'yes':
+#     #     print("Cancelled.")
+#     #     sys.exit(0)
+#
+#     run_pipeline(
+#         input_file=args.input_file,
+#         model=args.model,
+#         dimensions=args.dimensions,
+#         batch_size=args.batch_size,
+#     )

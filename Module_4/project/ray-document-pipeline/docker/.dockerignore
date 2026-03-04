@@ -1,0 +1,48 @@
+# .dockerignore — keeps Docker build context small and fast
+# Build context is project root (for COPY core/ stages/ orchestration/)
+# Exclude everything that isn't needed inside the container.
+
+# Documentation & deploy scripts (run on laptop, not in container)
+docs/
+deploy/
+*.md
+LICENSE
+
+# Version control
+.git/
+.gitignore
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test fixtures & coverage
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data files (never bake data into image)
+*.pdf
+*.csv
+clinical_trials_*/

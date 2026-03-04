@@ -1,6 +1,6 @@
 """
 ===============================================================================
-load_embeddings_to_pinecone.py  -  Pinecone Vector Ingestion  v2
+load_embeddings_to_pinecone.py  -  Pinecone Vector Ingestion  v3
 ===============================================================================
 
 Author  : Prudhvi  |  Thoughtworks
@@ -103,6 +103,20 @@ DEPENDENCIES
 CHANGELOG
 -------------------------------------------------------------------------------
 
+v3
+  FIX 6 - patch_urllib3_latin1() monkey-patches urllib3 to pre-encode string
+           bodies as UTF-8 bytes. This is the ROOT CAUSE fix — urllib3 defaults
+           to Latin-1 per HTTP/1.1 spec, which cannot represent U+0100+ chars.
+           Environment-level fixes (PYTHONIOENCODING, LANG, sitecustomize.py)
+           do NOT affect this code path.
+  FIX 7 - sanitize_for_transport() replaces non-Latin-1 characters using
+           unicodedata categories and names — fully generic, zero hardcoded
+           character mappings. Defence-in-depth for SDK changes / gRPC paths.
+  FIX 8 - sanitize_metadata() applies transport sanitisation to ALL string
+           values in vector metadata, not just the text field.
+  FIX 9 - Raw byte contamination handling (0xa3 invalid start byte) via
+           UTF-8 round-trip with surrogate pass + replace error handler.
+
 v2
   FIX 1 - load_json handles both wrapped dict and bare-list input shapes.
            data.get('chunks', []) returned [] for bare-list files.
@@ -128,11 +142,15 @@ import time
 import json
 import hashlib
 import argparse
+import unicodedata
+import logging
 from pathlib import Path
 from typing import Optional
 
 from pinecone import Pinecone, ServerlessSpec
 from utils import read_json_robust
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +162,203 @@ DEFAULT_CLOUD         = 'aws'
 DEFAULT_REGION        = 'us-east-1'    # Pinecone free tier lives here
 DEFAULT_BATCH_SIZE    = 100            # Pinecone recommends 100-200 per upsert
 METADATA_TEXT_LIMIT   = 10_000        # chars — well under Pinecone's 40KB limit
+
+
+# ===========================================================================
+# FIX: urllib3 Latin-1 Transport Patch  (ROOT CAUSE)
+# ===========================================================================
+#
+# WHY THIS IS NEEDED
+# ------------------
+# The Pinecone SDK serialises upsert payloads to a JSON *string* and passes
+# it to urllib3 as the HTTP request body. urllib3 then calls body.encode()
+# using Latin-1 (ISO-8859-1), which is the default charset for HTTP/1.1
+# text bodies per RFC 2616 §3.7.1.
+#
+# Any Unicode character above U+00FF (e.g. smart quotes U+2019, em dash
+# U+2014, Wingdings bullets U+F0B7) cannot be represented in Latin-1 and
+# raises UnicodeEncodeError.
+#
+# Environment-level fixes (PYTHONIOENCODING, LANG, sitecustomize.py) only
+# affect Python's stdio streams — they have NO effect on urllib3's internal
+# body encoding path.
+#
+# THE FIX
+# -------
+# Intercept urllib3.HTTPConnectionPool.urlopen() and pre-encode any str
+# body to UTF-8 bytes BEFORE urllib3 touches it. Once the body is already
+# bytes, urllib3 sends it as-is — no Latin-1 encoding step.
+#
+# This is exactly what the error message itself suggests:
+#   "Use body.encode('utf-8') if you want to send it encoded in UTF-8."
+#
+# The patch is idempotent — calling it multiple times is safe.
+# ===========================================================================
+
+_urllib3_patched = False
+
+
+def patch_urllib3_latin1():
+    """
+    Monkey-patch urllib3 to pre-encode string bodies as UTF-8.
+
+    This prevents UnicodeEncodeError for ANY non-Latin-1 character in
+    Pinecone metadata — no character-level sanitisation needed.
+
+    Safe to call multiple times (idempotent via _urllib3_patched flag).
+    """
+    global _urllib3_patched
+    if _urllib3_patched:
+        return
+
+    try:
+        import urllib3
+
+        _original_urlopen = urllib3.HTTPConnectionPool.urlopen
+
+        def _utf8_urlopen(self, method, url, body=None, headers=None, **kw):
+            if isinstance(body, str):
+                body = body.encode('utf-8')
+                # Ensure Content-Type declares UTF-8 so the server decodes correctly
+                if headers is None:
+                    headers = {}
+                ct = headers.get('Content-Type', headers.get('content-type', ''))
+                if 'application/json' in ct and 'charset' not in ct:
+                    headers['Content-Type'] = ct + '; charset=utf-8'
+            return _original_urlopen(self, method, url, body=body, headers=headers, **kw)
+
+        urllib3.HTTPConnectionPool.urlopen = _utf8_urlopen
+        _urllib3_patched = True
+        logger.info("urllib3 patched: string bodies will be encoded as UTF-8")
+    except Exception as e:
+        logger.warning(f"urllib3 patch failed ({e}) — falling back to metadata sanitisation")
+
+
+# ===========================================================================
+# FIX: Generic Unicode Sanitiser  (DEFENCE IN DEPTH)
+# ===========================================================================
+#
+# Even with the urllib3 patch above, we sanitise metadata as a safety net:
+#   - Protects against future SDK changes that bypass urllib3
+#   - Handles raw byte contamination (error #3: 0xa3 invalid start byte)
+#   - Works even if the monkey-patch is disabled
+#
+# The sanitiser uses unicodedata.category() and unicodedata.name() to
+# determine replacements DYNAMICALLY — zero hardcoded character mappings.
+# Any character outside Latin-1 range is replaced based on its Unicode
+# category (punctuation → ASCII punctuation, symbols → space, etc.).
+# ===========================================================================
+
+def sanitize_for_transport(text: str) -> str:
+    """
+    Ensure a string survives Latin-1 encoding by HTTP transport layers.
+
+    Strategy:
+      1. Handle raw bytes / mixed encoding (fixes 0xa3 invalid start byte)
+      2. NFC-normalise Unicode
+      3. For each char above U+00FF, use unicodedata to find the best
+         Latin-1-safe replacement based on its Unicode category and name.
+
+    This is fully generic — handles ANY Unicode character without hardcoding.
+
+    Args:
+        text: Input string (may contain non-Latin-1 characters)
+
+    Returns:
+        String where every character is in the Latin-1 range (U+0000–U+00FF)
+    """
+    if not text:
+        return text
+
+    # --- Step 1: Fix raw byte contamination ---
+    # If somehow a bytes object arrives, decode it safely
+    if isinstance(text, bytes):
+        text = text.decode('utf-8', errors='replace')
+
+    # Force a clean UTF-8 round-trip to catch surrogate pairs / stray bytes
+    text = text.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
+
+    # --- Step 2: NFC normalise ---
+    text = unicodedata.normalize('NFC', text)
+
+    # --- Step 3: Fast path — if already Latin-1-safe, return immediately ---
+    try:
+        text.encode('latin-1')
+        return text
+    except UnicodeEncodeError:
+        pass
+
+    # --- Step 4: Character-by-character replacement for non-Latin-1 chars ---
+    result = []
+    for ch in text:
+        cp = ord(ch)
+
+        # Latin-1 safe — keep as-is
+        if cp <= 0xFF:
+            result.append(ch)
+            continue
+
+        # Try NFKD decomposition (handles ligatures, accented forms, etc.)
+        decomposed = unicodedata.normalize('NFKD', ch)
+        safe = ''.join(c for c in decomposed if ord(c) <= 0xFF)
+        if safe:
+            result.append(safe)
+            continue
+
+        # Category-based replacement using Unicode metadata (fully dynamic)
+        name = unicodedata.name(ch, '')
+        cat = unicodedata.category(ch)
+
+        if cat == 'Pd' or 'DASH' in name or 'MINUS' in name:
+            # Dash punctuation: em dash, en dash, figure dash, etc.
+            result.append('-')
+        elif 'QUOTATION' in name or 'APOSTROPHE' in name:
+            # Any quotation mark variant → ASCII quote
+            result.append("'" if 'SINGLE' in name or 'APOSTROPHE' in name else '"')
+        elif 'BULLET' in name or 'DOT' in name and cat.startswith('P'):
+            result.append('*')
+        elif 'ELLIPSIS' in name:
+            result.append('...')
+        elif cat.startswith('P'):
+            # Other punctuation → space
+            result.append(' ')
+        elif cat == 'Sc':
+            # Currency symbols
+            result.append('$' if 'DOLLAR' in name else ' ')
+        elif cat.startswith('Z'):
+            # Separators (line/paragraph/space variants)
+            result.append(' ')
+        elif cat.startswith('S'):
+            # Other symbols
+            result.append(' ')
+        elif cat == 'Cf':
+            # Format characters (zero-width joiners, BOM, etc.) → drop
+            pass
+        elif cat == 'Co':
+            # Private Use Area (U+E000–U+F8FF) — commonly Wingdings bullets
+            # in clinical/pharma PDFs. Map to asterisk (bullet equivalent).
+            result.append('*')
+        else:
+            # Truly unknown: replace with Unicode replacement indicator
+            result.append('?')
+
+    return ''.join(result)
+
+
+def sanitize_metadata(meta: dict) -> dict:
+    """
+    Apply sanitize_for_transport() to every string value in a flat metadata dict.
+
+    Pinecone metadata is flat key-value pairs — this iterates all values and
+    sanitises strings. Non-string values (int, float, bool) pass through unchanged.
+    """
+    sanitised = {}
+    for key, value in meta.items():
+        if isinstance(value, str):
+            sanitised[key] = sanitize_for_transport(value)
+        else:
+            sanitised[key] = value
+    return sanitised
 
 
 # ===========================================================================
@@ -167,6 +382,10 @@ def init_pinecone(api_key: Optional[str] = None) -> Pinecone:
         print("  export PINECONE_API_KEY=pc-...  or  --api-key pc-...")
         print("  Get your key at: https://app.pinecone.io/")
         sys.exit(1)
+
+    # FIX: Patch urllib3 BEFORE creating the Pinecone client.
+    # This ensures all HTTP requests use UTF-8 body encoding.
+    patch_urllib3_latin1()
 
     client = Pinecone(api_key=key)
     print("Pinecone client initialised.")
@@ -454,7 +673,7 @@ def prepare_vectors(chunks: list, namespace: str = None) -> list:
 
         # Text content — truncated to stay under 40KB Pinecone metadata limit
         if text:
-            vector_meta['text'] = text[:METADATA_TEXT_LIMIT]
+            vector_meta['text'] = sanitize_for_transport(text)[:METADATA_TEXT_LIMIT]
 
         # FIX 4: chunk type — query layer needs this to trigger two-pass retrieval
         # Stage 3 writes type='table_offloaded' / 'image_offloaded' in metadata.
@@ -487,6 +706,11 @@ def prepare_vectors(chunks: list, namespace: str = None) -> list:
         # Chunk density — useful for scoring
         if 'num_atomic_chunks' in meta:
             vector_meta['num_atomic_chunks'] = int(meta['num_atomic_chunks'])
+
+        # FIX: Sanitise ALL metadata strings as defence-in-depth.
+        # Even with the urllib3 patch, this protects against SDK changes,
+        # gRPC fallback paths, and raw byte contamination from upstream stages.
+        vector_meta = sanitize_metadata(vector_meta)
 
         vectors.append({
             "id":       chunk_id,
@@ -646,46 +870,46 @@ def run_pipeline(args):
 # CLI
 # ===========================================================================
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Load JSON embeddings into a Pinecone serverless index  (Stage 5)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  export PINECONE_API_KEY=pc-...
-
-  python load_embeddings_to_pinecone.py embeddings.json
-  python load_embeddings_to_pinecone.py embeddings.json --index-name my-docs
-  python load_embeddings_to_pinecone.py embeddings.json --namespace q4-reports
-  python load_embeddings_to_pinecone.py embeddings.json --cloud gcp --region us-central1
-  python load_embeddings_to_pinecone.py embeddings.json --dimensions 384 --batch-size 200
-
-Two-pass retrieval (query layer must implement):
-  for match in results.matches:
-      if match.metadata.get('type') == 'table_offloaded':
-          raw_table = fetch_from_s3(s3_client, match.metadata['s3_uri'])
-          # pass description + raw table to LLM
-        """,
-    )
-
-    parser.add_argument('json_file',     help="Path to JSON file with embeddings (Stage 4 output)")
-    parser.add_argument('--api-key',     default=None,
-                        help="Pinecone API key (default: PINECONE_API_KEY env var)")
-    parser.add_argument('--index-name',  default=DEFAULT_INDEX_NAME,
-                        help=f"Index name (default: {DEFAULT_INDEX_NAME})")
-    parser.add_argument('--namespace',   default=None,
-                        help="Namespace for logical partitioning (optional)")
-    parser.add_argument('--dimensions',  type=int, default=None,
-                        help="Vector dimensions — auto-detected from first chunk if not set")
-    parser.add_argument('--metric',      default=DEFAULT_METRIC,
-                        choices=['cosine', 'euclidean', 'dotproduct'],
-                        help=f"Distance metric (default: {DEFAULT_METRIC})")
-    parser.add_argument('--cloud',       default=DEFAULT_CLOUD,
-                        choices=['aws', 'gcp', 'azure'],
-                        help=f"Cloud provider (default: {DEFAULT_CLOUD})")
-    parser.add_argument('--region',      default=DEFAULT_REGION,
-                        help=f"Cloud region (default: {DEFAULT_REGION})")
-    parser.add_argument('--batch-size',  type=int, default=DEFAULT_BATCH_SIZE,
-                        help=f"Vectors per upsert batch (default: {DEFAULT_BATCH_SIZE})")
-
-    run_pipeline(parser.parse_args())
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser(
+#         description="Load JSON embeddings into a Pinecone serverless index  (Stage 5)",
+#         formatter_class=argparse.RawDescriptionHelpFormatter,
+#         epilog="""
+# Examples:
+#   export PINECONE_API_KEY=pc-...
+#
+#   python load_embeddings_to_pinecone.py embeddings.json
+#   python load_embeddings_to_pinecone.py embeddings.json --index-name my-docs
+#   python load_embeddings_to_pinecone.py embeddings.json --namespace q4-reports
+#   python load_embeddings_to_pinecone.py embeddings.json --cloud gcp --region us-central1
+#   python load_embeddings_to_pinecone.py embeddings.json --dimensions 384 --batch-size 200
+#
+# Two-pass retrieval (query layer must implement):
+#   for match in results.matches:
+#       if match.metadata.get('type') == 'table_offloaded':
+#           raw_table = fetch_from_s3(s3_client, match.metadata['s3_uri'])
+#           # pass description + raw table to LLM
+#         """,
+#     )
+#
+#     parser.add_argument('json_file',     help="Path to JSON file with embeddings (Stage 4 output)")
+#     parser.add_argument('--api-key',     default=None,
+#                         help="Pinecone API key (default: PINECONE_API_KEY env var)")
+#     parser.add_argument('--index-name',  default=DEFAULT_INDEX_NAME,
+#                         help=f"Index name (default: {DEFAULT_INDEX_NAME})")
+#     parser.add_argument('--namespace',   default=None,
+#                         help="Namespace for logical partitioning (optional)")
+#     parser.add_argument('--dimensions',  type=int, default=None,
+#                         help="Vector dimensions — auto-detected from first chunk if not set")
+#     parser.add_argument('--metric',      default=DEFAULT_METRIC,
+#                         choices=['cosine', 'euclidean', 'dotproduct'],
+#                         help=f"Distance metric (default: {DEFAULT_METRIC})")
+#     parser.add_argument('--cloud',       default=DEFAULT_CLOUD,
+#                         choices=['aws', 'gcp', 'azure'],
+#                         help=f"Cloud provider (default: {DEFAULT_CLOUD})")
+#     parser.add_argument('--region',      default=DEFAULT_REGION,
+#                         help=f"Cloud region (default: {DEFAULT_REGION})")
+#     parser.add_argument('--batch-size',  type=int, default=DEFAULT_BATCH_SIZE,
+#                         help=f"Vectors per upsert batch (default: {DEFAULT_BATCH_SIZE})")
+#
+#     run_pipeline(parser.parse_args())

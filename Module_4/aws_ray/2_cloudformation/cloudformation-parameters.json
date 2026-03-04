@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "S3BucketName",
-    "ParameterValue": "ray-ingestion-prudhvi-18-feb-2026"
+    "ParameterValue": "ray-ingestion-prudhvi-19-feb-2026"
   },
   {
     "ParameterKey": "RayHeadCPU",
