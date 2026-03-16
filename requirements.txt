@@ -1,3 +1,4 @@
+langchain-google-genai
 # Minimal requirements - let pip resolve all versions automatically
 
 # Core packages - no version constraints
