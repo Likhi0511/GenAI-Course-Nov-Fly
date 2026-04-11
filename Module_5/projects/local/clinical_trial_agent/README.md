@@ -1,0 +1,1 @@
+pip install -e Module_5/projects/local/vs-agent-core
